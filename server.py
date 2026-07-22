@@ -90,6 +90,8 @@ def create_room():
         "log": [],
         "last_move": None,
         "last_battle": None,
+        # 直前の戦闘を「各プレイヤー視点」で持つ（自分の駒名だけ見せる。相手の駒名は伏せる）
+        "battle_view": {"A": None, "B": None},
         # 感想戦用：対戦開始からの各局面（正体つき）を1手ごとに記録していく
         "history": [],
         "version": 1,
@@ -146,13 +148,16 @@ def view_for(room, seat):
         "resigned": room.get("resigned"),
         "log": room["log"],
         "last_move": room["last_move"],
-        "last_battle": room["last_battle"],
+        # 戦闘結果は「このプレイヤー視点」の文言だけ渡す（自分の駒名のみ・相手の駒名は伏せる）
+        "last_battle": room.get("battle_view", {}).get(seat),
         "version": room["version"],
         "opponent_joined": room["players"][opponent] is not None,
         "board": board_view,
         "rows": rules.ROWS,
         "cols": rules.COLS,
         "home_cells": [list(c) for c in home_cells(seat)],
+        # 地雷・軍旗を置けないマス（突入口の手前）。画面での配置ガード用。
+        "no_immovable_cells": [list(c) for c in rules.gate_entry_cells(seat)],
         "piece_set": rules.PIECE_SET,
         # 盤の形（画面が川・橋・総司令部を描くために渡す）
         "border_row": rules.BORDER_ROW,
@@ -232,6 +237,8 @@ def handle_setup(room, seat, placement):
             return "同じマスに2つ置くことはできません。"
         if kind not in rules.PIECE_SET:
             return "知らない駒があります。"
+        if not rules.can_place(seat, kind, r, c):
+            return "地雷・軍旗は、突入口（橋）の前のマスには置けません。"
         seen.add((r, c))
         kinds_count[kind] = kinds_count.get(kind, 0) + 1
 
@@ -248,10 +255,11 @@ def handle_setup(room, seat, placement):
     # 両者そろったら対戦開始
     if room["ready"]["A"] and room["ready"]["B"]:
         room["phase"] = "play"
-        room["turn"] = "A"
+        # 先攻はA/Bランダムで決める（部屋を作った人が必ず先攻…にならないように）
+        room["turn"] = random.choice(["A", "B"])
         # 感想戦の記録を開始（0手目＝配置直後の局面）
         room["history"] = [{"board": snapshot_board(room["board"]), "move": None, "battle": None}]
-        add_log(room, "対戦開始！ A軍の手番です。")
+        add_log(room, f"対戦開始！ 先攻は{room['turn']}軍です。")
     bump(room)
     return None
 
@@ -320,21 +328,29 @@ def handle_move(room, seat, frm, to):
         if target["kind"] == rules.FLAG:
             behind = flag_behind_kind(board, opponent, tr, tc)
         result = rules.resolve_battle(mover["kind"], target["kind"], behind)
+        mk = mover["kind"]     # 自分（攻撃側 seat）の駒の種類
+        tk = target["kind"]    # 相手（守備側 opponent）の駒の種類
+        bv = room.setdefault("battle_view", {"A": None, "B": None})
 
         if result == "attacker":
             board[tr][tc] = mover
             board[fr][fc] = None
             room["last_battle"] = f"{seat}軍 の勝ち（{opponent}軍 の駒を取った）"
-            add_log(room, "⚔ " + room["last_battle"])
+            # 各プレイヤーには「自分の駒名」だけを見せる（相手の駒名は伏せる）
+            bv[seat] = f"{mk}で相手の駒を取りました"
+            bv[opponent] = f"{tk}が相手の駒に取られました"
         elif result == "defender":
             board[fr][fc] = None
             room["last_battle"] = f"{opponent}軍 の勝ち（{seat}軍 の駒が取られた）"
-            add_log(room, "⚔ " + room["last_battle"])
+            bv[seat] = f"{mk}が相手の駒に取られました"
+            bv[opponent] = f"{tk}で相手の駒を取りました"
         else:  # both（相打ち）
             board[fr][fc] = None
             board[tr][tc] = None
             room["last_battle"] = "相打ち（両軍の駒が1つずつ取られた）"
-            add_log(room, "⚔ " + room["last_battle"])
+            bv[seat] = f"{mk}が相手の駒と相打ちになりました"
+            bv[opponent] = f"{tk}が相手の駒と相打ちになりました"
+        add_log(room, "⚔ " + room["last_battle"])
         move_battle = room["last_battle"]
 
     room["last_move"] = {"from": [fr, fc], "to": [tr, tc]}
@@ -405,6 +421,7 @@ def handle_rematch(room):
     room["resigned"] = None
     room["last_move"] = None
     room["last_battle"] = None
+    room["battle_view"] = {"A": None, "B": None}
     room["history"] = []
     room["log"] = []
     add_log(room, "もう一局！ 駒を配置してください。")

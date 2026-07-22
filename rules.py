@@ -180,6 +180,21 @@ def forward_dir(seat):
     return -1 if seat == "A" else +1
 
 
+def gate_entry_cells(seat):
+    """突入口（橋）のすぐ手前マス＝自陣の最前列で、橋と同じ列のマス一覧。
+    A軍は(5,1)(5,4)、B軍は(3,1)(3,4)。ここには地雷・軍旗を置けない。"""
+    front = ROWS - HOME_ROWS if seat == "A" else HOME_ROWS - 1   # A=5, B=3
+    return [(front, c) for c in sorted(GATE_COLS)]
+
+
+def can_place(seat, kind, r, c):
+    """配置フェーズで (r,c) に kind を置いてよいか。
+    動かない駒（地雷・軍旗）は、突入口の手前マスに置けない（＝橋を塞げない）。"""
+    if kind in IMMOVABLE and (r, c) in gate_entry_cells(seat):
+        return False
+    return True
+
+
 # ---------------------------------------------------------------------------
 # 動き：ある駒が動ける先マスの一覧
 # ---------------------------------------------------------------------------
