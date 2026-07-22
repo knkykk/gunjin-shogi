@@ -4,22 +4,22 @@
 "use strict";
 
 // ---- セッション情報（自分がどの部屋のどちら側か）----
-// localStorage に保存する。理由：スマホで別アプリ（LINE等）に切り替えたり、
-// ブラウザがタブを一時的に捨てて再読み込みしても、記憶が消えず対戦に戻れるようにするため。
-// （sessionStorage だとアプリ切り替えで消えることがあった）
+// sessionStorage に保存する（タブ／端末ごとに独立して持つ）。
+// ★重要：ここを localStorage（ブラウザ全体で共有）にすると、同じブラウザで2人が開いたとき
+//   “正体”を共有してしまい、2人目の操作で1人目の席が退室させられる不具合が起きる。
+//   タブ／端末ごとに独立させることで、2人が絶対に正体を共有しないようにする。
+//   （1台で2人試すときは、タブを2つ開けばそれぞれ別プレイヤーになる）
 // プライベートモード等で使えなくても落ちないよう、必ず try で包む。
-// ※同じブラウザの2タブで別々の対戦者になることはできなくなる。1台で2人試すときは
-//   「普通のウィンドウ＋シークレット（プライベート）ウィンドウ」を使う。
 const SKEY = "gunjin";
 function loadSession() {
-  try { return JSON.parse(localStorage.getItem(SKEY) || "null"); }
+  try { return JSON.parse(sessionStorage.getItem(SKEY) || "null"); }
   catch (e) { return null; }
 }
 function saveSession(s) {
-  try { localStorage.setItem(SKEY, JSON.stringify(s)); } catch (e) { /* 使えなくても続行 */ }
+  try { sessionStorage.setItem(SKEY, JSON.stringify(s)); } catch (e) { /* 使えなくても続行 */ }
 }
 function clearSession() {
-  try { localStorage.removeItem(SKEY); } catch (e) { /* 無視 */ }
+  try { sessionStorage.removeItem(SKEY); } catch (e) { /* 無視 */ }
 }
 
 let session = loadSession();   // {code, token, seat}
@@ -174,8 +174,12 @@ function backToTop(tellServer) {
   hide("log-wrap");
   showScreen("screen-top");
 }
-// ユーザーが自分で部屋を出るとき（ボタン）。サーバーにも退室を伝える。
-function leaveRoom() { backToTop(true); }
+// ユーザーが自分で部屋を出るとき（ボタン）。誤タップで対戦を壊さないよう確認を挟む。
+// ここでだけサーバーに退室を伝える（席をすぐ空ける）。自動復帰では退室を送らない。
+function leaveRoom() {
+  if (!confirm("この部屋から抜けて、最初の画面に戻りますか？")) return;
+  backToTop(true);
+}
 
 // ===========================================================================
 // 画面の切り替えと描画
