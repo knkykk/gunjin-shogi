@@ -278,16 +278,31 @@ input[type=text] {
 
 .sub-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
-/* 投了ボタン（対戦中に表示） */
+/* 対戦画面の小さな操作ボタン（音・投了）を横並びに */
+.play-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+}
+.sound-btn {
+  padding: 5px 12px;
+  font-size: 12px;
+}
+.sound-btn.off { opacity: 0.7; }
+
+/* 投了ボタン（対戦中に表示。控えめな小さめボタン） */
 .resign-btn {
-  display: block;
-  width: 100%;
-  margin-top: 10px;
+  padding: 5px 12px;
+  font-size: 12px;
   color: var(--a-color);
   border-color: #e0b4ae;
   background: #fbeeec;
-  font-weight: bold;
 }
+
+/* 突入口の前＝地雷・軍旗を置けないマスの目印（配置中だけ・赤い内枠） */
+.cell.gate-front { box-shadow: inset 0 0 0 2px rgba(192,57,43,0.5); }
 
 /* 感想戦パネル（対戦が終わったら表示） */
 .review {

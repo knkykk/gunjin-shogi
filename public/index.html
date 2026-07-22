@@ -4,13 +4,13 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>軍人将棋 オンライン対戦</title>
-  <link rel="stylesheet" href="style.css?v=10">
+  <link rel="stylesheet" href="style.css?v=13">
 </head>
 <body>
   <header>
     <h1>軍人将棋</h1>
     <p class="tagline">審判あり・オンライン対戦</p>
-    <p style="text-align:center;font-size:0.8em;opacity:0.6;margin:2px 0 0;">バージョン v10（2026-07-22）</p>
+    <p style="text-align:center;font-size:0.8em;opacity:0.6;margin:2px 0 0;">バージョン v13（2026-07-22）</p>
   </header>
 
   <main id="stage" class="stage">
@@ -44,7 +44,7 @@
     <div class="card">
       <button id="btn-leave-setup" class="sub-btn back-btn">← 最初に戻る（部屋を出る）</button>
       <h2>駒を配置しましょう（全23枚）</h2>
-      <p class="hint">下の駒置き場から駒を選び、自陣（色つきのマス）をタップして置きます。置いた駒はタップで持ち上げ→<b>空きマスをタップで移動／別の駒をタップで入れ替え／同じ駒をもう一度タップで置き場に戻す</b>。★が自分の総司令部で、相手に大将〜少佐で占領されると負けなのでしっかり守りましょう。急ぐときは「おまかせ配置」でも置けます。</p>
+      <p class="hint">下の駒置き場から駒を選び、自陣（色つきのマス）をタップして置きます。置いた駒はタップで持ち上げ→<b>空きマスをタップで移動／別の駒をタップで入れ替え／同じ駒をもう一度タップで置き場に戻す</b>。★が自分の総司令部で、相手に大将〜少佐で占領されると負けなのでしっかり守りましょう。<b>赤い枠のマス（突入口の前）には地雷・軍旗は置けません。</b>急ぐときは「おまかせ配置」でも置けます。</p>
       <div id="tray" class="tray"></div>
       <div class="setup-actions">
         <button id="btn-auto" class="sub-btn">おまかせ配置</button>
@@ -58,7 +58,10 @@
   <!-- 画面4: 対戦 -->
   <section id="screen-play" class="screen hidden">
     <div id="turn-banner" class="banner"></div>
-    <button id="btn-resign" class="sub-btn resign-btn hidden">旗を巻く（投了・負けを認める）</button>
+    <div class="play-controls">
+      <button id="btn-sound" class="sub-btn sound-btn">🔊 音 オン</button>
+      <button id="btn-resign" class="sub-btn resign-btn hidden">投了</button>
+    </div>
 
     <!-- 感想戦（対戦が終わったら表示。1手ずつ振り返る） -->
     <div id="review-panel" class="review hidden">
@@ -107,6 +110,6 @@
   <!-- お知らせ（エラーなど） -->
   <div id="toast" class="toast hidden"></div>
 
-  <script src="client.js?v=10"></script>
+  <script src="client.js?v=13"></script>
 </body>
 </html>

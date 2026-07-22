@@ -64,6 +64,42 @@ function toast(msg) {
   toast._timer = setTimeout(() => t.classList.add("hidden"), 2600);
 }
 
+// ---- 駒を動かしたときの効果音（ブラウザ内蔵の音源で短く「コッ」）----
+// 外部の音ファイルは使わず、その場で音を作って鳴らす（素材ファイル不要で確実）。
+// 音のオン/オフはブラウザに覚えさせる（次に開いたときも設定が残る）。
+function loadSoundPref() {
+  try { return localStorage.getItem("gunjin_sound") !== "off"; } catch (e) { return true; }
+}
+function saveSoundPref(on) {
+  try { localStorage.setItem("gunjin_sound", on ? "on" : "off"); } catch (e) { /* 無視 */ }
+}
+let soundOn = loadSoundPref();
+
+let audioCtx = null;
+function playMoveSound() {
+  if (!soundOn) return;
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    audioCtx = audioCtx || new AC();
+    if (audioCtx.state === "suspended") audioCtx.resume();  // 一度クリックした後は鳴らせる
+    const now = audioCtx.currentTime;
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type = "triangle";
+    o.frequency.setValueAtTime(320, now);
+    o.frequency.exponentialRampToValueAtTime(180, now + 0.09); // 少し下がる＝木の駒っぽい
+    g.gain.setValueAtTime(0.0001, now);
+    g.gain.exponentialRampToValueAtTime(0.18, now + 0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001, now + 0.12);
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start(now);
+    o.stop(now + 0.13);
+  } catch (e) { /* 音が出せない環境でも黙ってスルー */ }
+}
+// 直近で音を鳴らした手（同じ手で二重に鳴らさない用）。"init"＝まだ観測前で鳴らさない
+let lastMoveSig = "init";
+
 // ---- 座標変換：自分の駒がいつも手前（下側）に見えるようにする ----
 // A軍は盤の下側なのでそのまま。B軍は180度回して表示する。
 function toReal(dr, dc) {
@@ -171,6 +207,7 @@ function backToTop(tellServer) {
   selectedPlace = null;
   selectedCell = null;
   reviewIndex = null;
+  lastMoveSig = "init";
   $("join-code").value = "";
   $("btn-create").disabled = false;   // トップに戻ったら作成・入室を押せるように戻す
   $("btn-join").disabled = false;
@@ -218,6 +255,13 @@ function render() {
   if (phase === "play" || phase === "over") {
     showScreen("screen-play");
     show("board-wrap"); show("log-wrap"); show("rules-ref");
+    // 駒が動いたら効果音（自分の手・相手の手どちらも）。感想戦の巻き戻しでは鳴らさない。
+    if (phase === "play") {
+      const lm = state.last_move;
+      const sig = lm ? JSON.stringify(lm) : "none";
+      if (lastMoveSig !== "init" && sig !== "none" && sig !== lastMoveSig) playMoveSound();
+      lastMoveSig = sig;
+    }
     renderTurnBanner();
     if (phase === "over") {
       // 感想戦モード：投了ボタンは隠し、振り返りパネルを出す
@@ -321,19 +365,26 @@ $("btn-clear").addEventListener("click", () => {
 
 $("btn-auto").addEventListener("click", () => {
   if (state.ready[session.seat]) return;
-  placement = [];
-  const cells = (state.home_cells || []).map(([r, c]) => [r, c]);
-  // シャッフル
-  for (let i = cells.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [cells[i], cells[j]] = [cells[j], cells[i]];
-  }
-  let idx = 0;
+  const all = (state.home_cells || []).map(([r, c]) => [r, c]);
+  // 突入口の前（地雷・軍旗を置けないマス）とそれ以外に分ける
+  const forbidden = all.filter(([r, c]) => isNoImmovableCell(r, c));
+  const free = shuffleArray(all.filter(([r, c]) => !isNoImmovableCell(r, c)));
+  // 駒を「動く駒」「動かない駒(地雷・軍旗)」に分ける
+  const movable = [], immovable = [];
   for (const kind of Object.keys(state.piece_set)) {
     for (let k = 0; k < state.piece_set[kind]; k++) {
-      const [r, c] = cells[idx++];
-      placement.push({ row: r, col: c, kind });
+      (IMMOVABLE.has(kind) ? immovable : movable).push(kind);
     }
+  }
+  shuffleArray(movable);
+  placement = [];
+  // まず突入口の前には必ず「動く駒」を置く（地雷・軍旗が来ないように）
+  let mi = 0;
+  for (const [r, c] of forbidden) placement.push({ row: r, col: c, kind: movable[mi++] });
+  // 残りの駒（残った動く駒＋地雷・軍旗）を、突入口以外のマスに配る
+  const rest = shuffleArray(movable.slice(mi).concat(immovable));
+  for (let i = 0; i < free.length; i++) {
+    placement.push({ row: free[i][0], col: free[i][1], kind: rest[i] });
   }
   selectedKind = null;
   selectedPlace = null;
@@ -358,6 +409,8 @@ function handleSetupClick(rr, rc) {
   const ex = placedAt(rr, rc);
   const redraw = () => { renderTray(); renderBoard(); updateSetupStatus(); };
 
+  const NG = "地雷・軍旗は、突入口（橋）の前のマスには置けません。";
+
   // すでに盤の駒を持ち上げている場合
   if (selectedPlace) {
     const cur = placedAt(selectedPlace.row, selectedPlace.col);
@@ -365,9 +418,13 @@ function handleSetupClick(rr, rc) {
     else if (rr === selectedPlace.row && rc === selectedPlace.col) {  // 同じ駒 → 置き場に戻す
       placement = placement.filter((p) => p !== cur); selectedPlace = null; redraw(); return;
     } else if (ex) {                                                  // 別の駒 → 位置を入れ替え
+      // 入れ替えで地雷・軍旗が突入口の前に来てしまう場合は止める
+      if (IMMOVABLE.has(cur.kind) && isNoImmovableCell(ex.row, ex.col)) { toast(NG); return; }
+      if (IMMOVABLE.has(ex.kind) && isNoImmovableCell(cur.row, cur.col)) { toast(NG); return; }
       const ar = cur.row, ac = cur.col; cur.row = ex.row; cur.col = ex.col; ex.row = ar; ex.col = ac;
       selectedPlace = null; redraw(); return;
     } else {                                                         // 空きマス → そこへ移動
+      if (IMMOVABLE.has(cur.kind) && isNoImmovableCell(rr, rc)) { toast(NG); return; }
       cur.row = rr; cur.col = rc; selectedPlace = null; redraw(); return;
     }
   }
@@ -377,6 +434,7 @@ function handleSetupClick(rr, rc) {
   if (!selectedKind) { toast("置き場から駒を選ぶか、盤の駒をタップしてください。"); return; }
   const remain = remainingCounts();
   if (remain[selectedKind] <= 0) { toast("その駒はもうありません。"); return; }
+  if (IMMOVABLE.has(selectedKind) && isNoImmovableCell(rr, rc)) { toast(NG); return; }
   placement.push({ row: rr, col: rc, kind: selectedKind });
   if (remainingCounts()[selectedKind] <= 0) selectedKind = null;
   redraw();
@@ -470,6 +528,20 @@ function firstSteps(r, c, dr, dc) {
 
 function isHomeCell(r, c) {
   return (state.home_cells || []).some(([hr, hc]) => hr === r && hc === c);
+}
+
+// 地雷・軍旗を置けないマス（突入口の手前）か
+function isNoImmovableCell(r, c) {
+  return (state.no_immovable_cells || []).some(([hr, hc]) => hr === r && hc === c);
+}
+
+// 配列をその場でシャッフルする（おまかせ配置で使う）
+function shuffleArray(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
 }
 
 // ---- (r,c)の自分の駒が動ける先を、駒の種類ごとの動きで返す（サーバーと同じ判定）----
@@ -658,6 +730,8 @@ function renderBoard() {
       if (state.phase === "setup" && isHomeCell(rr, rc)) {
         div.classList.add("home");
         if (!state.ready[session.seat]) div.classList.add("selectable-home");
+        // 突入口の前＝地雷・軍旗を置けないマスに目印
+        if (isNoImmovableCell(rr, rc)) div.classList.add("gate-front");
       }
 
       // 直前の移動：元位置（点線の丸）と移動先（金の枠）を別々に印付け
@@ -754,7 +828,21 @@ $("rv-prev").addEventListener("click", () => gotoReview((reviewIndex || 0) - 1))
 $("rv-next").addEventListener("click", () => gotoReview((reviewIndex || 0) + 1));
 $("rv-last").addEventListener("click", () => gotoReview((state.history || []).length - 1));
 
-// ---- 投了（旗を巻く）----
+// ---- 音のオン/オフ スイッチ ----
+function updateSoundBtn() {
+  const b = $("btn-sound");
+  b.textContent = soundOn ? "🔊 音 オン" : "🔇 音 オフ";
+  b.classList.toggle("off", !soundOn);
+}
+$("btn-sound").addEventListener("click", () => {
+  soundOn = !soundOn;
+  saveSoundPref(soundOn);
+  updateSoundBtn();
+  if (soundOn) playMoveSound();   // オンにしたら一度鳴らして確認（＆音声を有効化）
+});
+updateSoundBtn();
+
+// ---- 投了 ----
 $("btn-resign").addEventListener("click", async () => {
   if (!state || state.phase !== "play") return;
   if (!confirm("旗を巻いて（投了して）負けを認めますか？\nこのあと感想戦で1手ずつ振り返れます。")) return;
@@ -771,7 +859,7 @@ $("btn-rematch").addEventListener("click", async () => {
     state = await api("/api/rematch", { code: session.code, token: session.token });
     lastVersion = state.version;
     placement = []; selectedKind = null; selectedPlace = null; selectedCell = null;
-    reviewIndex = null;
+    reviewIndex = null; lastMoveSig = "init";
     render();
   } catch (e) { toast(e.message); }
 });
