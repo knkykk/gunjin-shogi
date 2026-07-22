@@ -338,21 +338,15 @@ def handle_move(room, seat, frm, to):
 
 
 def handle_leave(room, seat):
-    """その席のプレイヤーが部屋を出る。席をすぐ空けて、相手が入り直せるようにする。"""
-    dlog(f"LEAVE: 部屋 {room['code']} の席{seat} が退室 → phase={room['phase']}")
-    room["players"][seat] = None
+    """「退室」処理。ただし“対戦中の本人を巻き添えで切断しない”ことを最優先する。
+    ここでは席のトークンも盤面も消さない（＝この操作で誰も強制退場させない）。
+    本当に去った席は、一定時間ポーリングが来なければ last_seen により自然に空く。
+
+    ※以前はここで席を None にしていたため、同じ席を握った別タブ等が1つでもあると、
+      片方の退室で“まだ遊んでいる本人”が 403 を食らって切断される不具合があった。
+      その根本対策として、退室を「席を即消す」から「離席ぎみと記録するだけ」に無害化する。"""
+    dlog(f"LEAVE(無害化): 部屋 {room['code']} 席{seat} → 席・盤面は保持（last_seenのみ更新）")
     room["last_seen"][seat] = 0
-    room["ready"][seat] = False
-    # 配置中・対戦中に抜けたら、部屋を「相手待ち」に戻す（残った人がやり直せる）
-    if room["phase"] in ("setup", "play", "over"):
-        room["phase"] = "waiting"
-        room["board"] = empty_board()
-        room["ready"] = {"A": False, "B": False}
-        room["turn"] = "A"
-        room["winner"] = None
-        room["last_move"] = None
-        room["last_battle"] = None
-        add_log(room, f"{seat}軍が退室しました。もう一度そろうと再開できます。")
     bump(room)
 
 
