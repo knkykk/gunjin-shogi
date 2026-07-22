@@ -275,3 +275,39 @@ input[type=text] {
 }
 .result.win { color: var(--accent); }
 .result.lose { color: #9a9284; }
+
+.sub-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* 投了ボタン（対戦中に表示） */
+.resign-btn {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+  color: var(--a-color);
+  border-color: #e0b4ae;
+  background: #fbeeec;
+  font-weight: bold;
+}
+
+/* 感想戦パネル（対戦が終わったら表示） */
+.review {
+  margin-top: 12px;
+  padding: 12px;
+  background: #fff;
+  border: 1px solid #e3ddce;
+  border-radius: 12px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+}
+.review-title { font-size: 13px; color: #7a7266; margin-bottom: 6px; }
+.review-info {
+  font-weight: bold;
+  color: var(--ink);
+  min-height: 1.5em;
+  margin-bottom: 10px;
+}
+.review-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.review-controls .sub-btn { flex: 1 1 auto; }

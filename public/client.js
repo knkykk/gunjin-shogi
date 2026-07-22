@@ -35,6 +35,9 @@ let selectedPlace = null;      // 盤上で持ち上げた駒 {row, col}
 // 対戦フェーズ用
 let selectedCell = null;       // {r, c} 実座標
 
+// 感想戦用：いま何手目の局面を見ているか（over のときだけ使う。null=未設定）
+let reviewIndex = null;
+
 const $ = (id) => document.getElementById(id);
 
 // ---- サーバーへの通信 ----
@@ -167,6 +170,7 @@ function backToTop(tellServer) {
   selectedKind = null;
   selectedPlace = null;
   selectedCell = null;
+  reviewIndex = null;
   $("join-code").value = "";
   $("btn-create").disabled = false;   // トップに戻ったら作成・入室を押せるように戻す
   $("btn-join").disabled = false;
@@ -215,6 +219,20 @@ function render() {
     showScreen("screen-play");
     show("board-wrap"); show("log-wrap"); show("rules-ref");
     renderTurnBanner();
+    if (phase === "over") {
+      // 感想戦モード：投了ボタンは隠し、振り返りパネルを出す
+      hide("btn-resign");
+      const total = (state.history || []).length;
+      // 初めて感想戦に入ったとき（未設定/範囲外）は「最後の局面」から見せる
+      if (reviewIndex === null || reviewIndex >= total) reviewIndex = Math.max(0, total - 1);
+      show("review-panel");
+      renderReview();
+    } else {
+      // 対戦中：投了ボタンを出し、振り返りパネルは隠す
+      show("btn-resign");
+      hide("review-panel");
+      reviewIndex = null;
+    }
     renderBoard();
     renderLog();
     $("btn-rematch").classList.toggle("hidden", phase !== "over");
@@ -232,9 +250,13 @@ function renderTurnBanner() {
     ? `<div class="last-battle">⚔ 直前の戦闘：${state.last_battle}</div>` : "";
   if (state.phase === "over") {
     const win = state.winner === session.seat;
+    const byResign = !!state.resigned;
+    const iResigned = state.resigned === session.seat;
+    let msg;
+    if (win) msg = byResign ? "🎉 相手が投了。あなたの勝ち！" : "🎉 あなたの勝ち！";
+    else msg = iResigned ? "🏳 投了しました（あなたの負け）" : "…あなたの負け";
     b.className = "banner " + (win ? "your-turn" : "wait-turn");
-    b.innerHTML = `<div class="result ${win ? "win" : "lose"}">` +
-      (win ? "🎉 あなたの勝ち！" : "…あなたの負け") + "</div>" + battle;
+    b.innerHTML = `<div class="result ${win ? "win" : "lose"}">${msg}</div>` + battle;
     return;
   }
   const my = state.turn === session.seat;
@@ -567,6 +589,21 @@ async function sendMove(frm, to) {
 // ===========================================================================
 // 盤面の描画（配置・対戦 共用）
 // ===========================================================================
+// いま描くべき盤面。感想戦(over)のときは記録した局面を、それ以外は生の盤面を使う。
+function activeBoard() {
+  if (state.phase === "over" && state.history && state.history.length && reviewIndex !== null) {
+    return state.history[reviewIndex].board;
+  }
+  return state.board;
+}
+// いま強調すべき「直前の1手」。感想戦のときはその局面を作った手を使う。
+function activeLastMove() {
+  if (state.phase === "over" && state.history && state.history.length && reviewIndex !== null) {
+    return state.history[reviewIndex].move;
+  }
+  return state.last_move;
+}
+
 function renderBoard() {
   const board = $("board");
   board.style.gridTemplateColumns = `repeat(${state.cols}, 1fr)`;
@@ -576,7 +613,8 @@ function renderBoard() {
   const targets = (state.phase === "play" && selectedCell)
     ? legalTargets(selectedCell.r, selectedCell.c) : [];
   const inTargets = (rr, rc) => targets.some(([tr, tc]) => tr === rr && tc === rc);
-  const lm = state.last_move;
+  const lm = activeLastMove();
+  const liveBoard = activeBoard();
 
   // 表示は「自分が手前（下側）」になるよう変換して並べる
   for (let dr = 0; dr < state.rows; dr++) {
@@ -635,7 +673,7 @@ function renderBoard() {
         if (p) piece = { owner: session.seat, kind: p.kind, mine: true };
         // 相手の配置は見えない（サーバーからも来ない）ので表示しない
       } else {
-        piece = state.board[rr][rc];
+        piece = liveBoard[rr][rc];
       }
 
       if (piece) {
@@ -681,12 +719,59 @@ function renderLog() {
   ul.scrollTop = ul.scrollHeight;
 }
 
+// ---- 感想戦（1手ずつ振り返る）----
+function renderReview() {
+  const h = state.history || [];
+  const n = h.length;
+  const info = $("review-info");
+  if (!n) { info.textContent = ""; return; }
+  const idx = reviewIndex;
+  const frame = h[idx];
+  let desc;
+  if (idx === 0) {
+    desc = "対戦開始（配置直後）の局面";
+  } else {
+    const bt = frame && frame.battle ? "　⚔ " + frame.battle : "";
+    desc = `${idx}手目の局面${bt}`;
+  }
+  info.textContent = `${desc}　［全${n - 1}手］`;
+  // 端では戻す/すすむを押せなくする
+  $("rv-first").disabled = idx <= 0;
+  $("rv-prev").disabled = idx <= 0;
+  $("rv-next").disabled = idx >= n - 1;
+  $("rv-last").disabled = idx >= n - 1;
+}
+
+function gotoReview(idx) {
+  const n = (state.history || []).length;
+  if (!n) return;
+  reviewIndex = Math.max(0, Math.min(n - 1, idx));
+  renderBoard();
+  renderReview();
+}
+$("rv-first").addEventListener("click", () => gotoReview(0));
+$("rv-prev").addEventListener("click", () => gotoReview((reviewIndex || 0) - 1));
+$("rv-next").addEventListener("click", () => gotoReview((reviewIndex || 0) + 1));
+$("rv-last").addEventListener("click", () => gotoReview((state.history || []).length - 1));
+
+// ---- 投了（旗を巻く）----
+$("btn-resign").addEventListener("click", async () => {
+  if (!state || state.phase !== "play") return;
+  if (!confirm("旗を巻いて（投了して）負けを認めますか？\nこのあと感想戦で1手ずつ振り返れます。")) return;
+  try {
+    state = await api("/api/resign", { code: session.code, token: session.token });
+    lastVersion = state.version;
+    render();
+  } catch (e) { toast(e.message); }
+});
+
 // ---- もう一局 ----
 $("btn-rematch").addEventListener("click", async () => {
   try {
     state = await api("/api/rematch", { code: session.code, token: session.token });
     lastVersion = state.version;
     placement = []; selectedKind = null; selectedPlace = null; selectedCell = null;
+    reviewIndex = null;
     render();
   } catch (e) { toast(e.message); }
 });

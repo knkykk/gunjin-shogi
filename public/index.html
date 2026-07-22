@@ -4,13 +4,13 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>軍人将棋 オンライン対戦</title>
-  <link rel="stylesheet" href="style.css?v=9">
+  <link rel="stylesheet" href="style.css?v=10">
 </head>
 <body>
   <header>
     <h1>軍人将棋</h1>
     <p class="tagline">審判あり・オンライン対戦</p>
-    <p style="text-align:center;font-size:0.8em;opacity:0.6;margin:2px 0 0;">バージョン v9（2026-07-22）</p>
+    <p style="text-align:center;font-size:0.8em;opacity:0.6;margin:2px 0 0;">バージョン v10（2026-07-22）</p>
   </header>
 
   <main id="stage" class="stage">
@@ -19,7 +19,7 @@
   <section id="screen-top" class="screen">
     <div class="card">
       <button id="btn-create" class="big-btn">部屋を作る</button>
-      <p class="hint">部屋を作ると、あいことば（部屋コード）が出ます。<br>それを友人に伝えてください。</p>
+      <p class="hint">部屋を作ると、あいことば（部屋コード）が出ます。<br>それを相手に伝えてください。</p>
     </div>
     <div class="card">
       <label for="join-code">部屋に入る</label>
@@ -31,10 +31,10 @@
   <!-- 画面2: 相手待ち -->
   <section id="screen-wait" class="screen hidden">
     <div class="card">
-      <h2>あなたはホストです。友だちの入室を待っています…</h2>
-      <p>下の「あいことば」を友だちに伝えてください。<br><b>あなたはこのまま何も押さずに待ってください（自分では入室しません）。</b></p>
+      <h2>あなたはホストです。相手の入室を待っています…</h2>
+      <p>下の「あいことば」を相手に伝えてください。<br><b>あなたはこのまま何も押さずに待ってください（自分では入室しません）。</b></p>
       <div id="room-code" class="room-code"></div>
-      <p class="hint">友だちが「入室する」でこのあいことばを入れると、自動で対戦が始まります。</p>
+      <p class="hint">相手が「入室する」でこのあいことばを入れると、自動で対戦が始まります。</p>
       <button id="btn-leave-wait" class="sub-btn back-btn">× この部屋をやめる（最初に戻る）</button>
     </div>
   </section>
@@ -58,6 +58,19 @@
   <!-- 画面4: 対戦 -->
   <section id="screen-play" class="screen hidden">
     <div id="turn-banner" class="banner"></div>
+    <button id="btn-resign" class="sub-btn resign-btn hidden">旗を巻く（投了・負けを認める）</button>
+
+    <!-- 感想戦（対戦が終わったら表示。1手ずつ振り返る） -->
+    <div id="review-panel" class="review hidden">
+      <div class="review-title">感想戦（ふりかえり）— 伏せていた相手の駒も全部見えます</div>
+      <div id="review-info" class="review-info"></div>
+      <div class="review-controls">
+        <button id="rv-first" class="sub-btn">◀◀ 最初</button>
+        <button id="rv-prev" class="sub-btn">◀ 1手もどす</button>
+        <button id="rv-next" class="sub-btn">1手すすむ ▶</button>
+        <button id="rv-last" class="sub-btn">最後 ▶▶</button>
+      </div>
+    </div>
   </section>
 
   <!-- 盤面（配置フェーズと対戦フェーズで共用） -->
@@ -94,6 +107,6 @@
   <!-- お知らせ（エラーなど） -->
   <div id="toast" class="toast hidden"></div>
 
-  <script src="client.js?v=9"></script>
+  <script src="client.js?v=10"></script>
 </body>
 </html>
