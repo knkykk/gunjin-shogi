@@ -165,14 +165,14 @@ def handle_join(code):
     # すでにBが埋まっている場合の扱い。
     if room["players"]["B"] is not None:
         idle = time.time() - room["last_seen"].get("B", 0)
-        dlog(f"JOIN 満員判定: 部屋 {code} の席B埋まり済み・B無通信 {idle:.1f}秒 (制限 {SEAT_TIMEOUT}秒)")
-        # 対戦がもう始まっている部屋だけは、横取りを防ぐため満席にする。
-        # （ただし相手が長時間 音沙汰なしなら、抜けたとみなして空席にする）
-        if room["phase"] in ("play", "over") and idle < SEAT_TIMEOUT:
+        dlog(f"JOIN 判定: 部屋 {code} の席B埋まり済み・B無通信 {idle:.1f}秒 (制限 {SEAT_TIMEOUT}秒)")
+        # ★席の奪い合い防止：席Bに“今も通信している人”がいる間は、別人の横取り入室を禁止する。
+        #   フェーズに関係なく満員扱いにする。これで「後から入った人が、先にいた人を弾いて
+        #   切断させる」不具合を根本から防ぐ。
+        #   一定時間(SEAT_TIMEOUT)まったく音沙汰がなければ＝本当に抜けたとみなし、空席として入れる。
+        if idle < SEAT_TIMEOUT:
             return None, "その部屋はすでに満員です。"
-        # まだ準備中（waiting / setup）なら、同じ人が二度押し・入り直しをしても
-        # 弾かずに席を渡し直す。これで「入れたのにボタンを二度押して“満員”」が起きない。
-        # 前に置きかけた駒が残っていると混乱するので、Bの駒と準備状態は一度きれいにする。
+        # 抜けたとみなして席Bを空ける。前の人の置きかけの駒は消しておく。
         for r in range(rules.ROWS):
             for c in range(rules.COLS):
                 cell = room["board"][r][c]
@@ -429,13 +429,6 @@ class Handler(BaseHTTPRequestHandler):
                     self.reply(400, {"error": err})
                 else:
                     self.reply(200, result)
-                return
-
-            # 【一時的な計測用】画面(client.js)が送ってくる動作ログを、そのままサーバーログに残す。
-            # 本人確認は不要（席が無い状態の動きも記録したいため）。原因特定後に削除する。
-            if path == "/api/clientlog":
-                dlog(f"CLIENT[pid={data.get('pid')} {data.get('who')}] {data.get('msg')}")
-                self.reply(200, {"ok": True})
                 return
 
             # ここから先は部屋と本人確認が必要

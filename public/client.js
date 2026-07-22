@@ -61,20 +61,6 @@ function toast(msg) {
   toast._timer = setTimeout(() => t.classList.add("hidden"), 2600);
 }
 
-// 【一時的な計測用】画面の動きをサーバーのログに書き出す。原因特定後に削除する。
-// ページ固有ID(PAGE_ID)を付けるので、2台のログが混ざっても1人目/2人目を区別できる。
-const PAGE_ID = Math.random().toString(36).slice(2, 7);
-function clog(msg) {
-  try {
-    const who = session ? (session.seat + "/" + session.code) : "-";
-    fetch("/api/clientlog", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ pid: PAGE_ID, who: who, msg: String(msg) }),
-    }).catch(() => {});
-  } catch (e) { /* ログ送信の失敗は無視 */ }
-}
-
 // ---- 座標変換：自分の駒がいつも手前（下側）に見えるようにする ----
 // A軍は盤の下側なのでそのまま。B軍は180度回して表示する。
 function toReal(dr, dc) {
@@ -96,7 +82,6 @@ $("btn-create").addEventListener("click", async () => {
     const r = await api("/api/create", {});
     session = { code: r.code, token: r.token, seat: r.seat };
     saveSession(session);
-    clog("CREATE成功 seat=" + r.seat + " token=" + String(r.token).slice(0, 6));
     lastVersion = -1;
     await refresh();          // 成功したら待ち画面へ。ボタンは押せないまま（二重作成防止）。
   } catch (e) {
@@ -114,7 +99,6 @@ $("btn-join").addEventListener("click", async () => {
     const r = await api("/api/join", { code });
     session = { code, token: r.token, seat: r.seat };
     saveSession(session);
-    clog("JOIN成功 seat=" + r.seat + " token=" + String(r.token).slice(0, 6));
     lastVersion = -1;
     await refresh();          // 成功したら配置画面へ。ボタンは押せないまま（二重入室で「満員」になるのを防ぐ）。
   } catch (e) {
@@ -124,9 +108,8 @@ $("btn-join").addEventListener("click", async () => {
 });
 
 // 「最初に戻る」ボタン（あいことば画面・配置画面）→ その場で部屋を出る
-// 【計測】どちらのボタンが押されたかを記録（誤タップかどうかの手がかり）。
-$("btn-leave-wait").addEventListener("click", () => { clog("CLICK 戻るボタン(待機画面)"); leaveRoom(); });
-$("btn-leave-setup").addEventListener("click", () => { clog("CLICK 戻るボタン(配置画面)"); leaveRoom(); });
+$("btn-leave-wait").addEventListener("click", leaveRoom);
+$("btn-leave-setup").addEventListener("click", leaveRoom);
 
 // ===========================================================================
 // 状態の取得（1秒ごとに最新を見に行く。ポーリングは常時オンで止まらない）
@@ -157,7 +140,6 @@ async function refresh() {
     // 起きうるので、1回では退出しない。数回連続で初めて諦める。
     if (e.code === 403 || e.code === 404) {
       failStreak++;
-      clog("state取得 失敗 code=" + e.code + " failStreak=" + failStreak + "/6");
       if (failStreak >= 6) {            // 約6秒つながらなければ本当に切れたとみなす
         backToTop(false);               // 相手を巻き込まないよう、サーバーへ退室は伝えない
         toast("接続が切れたため、最初の画面に戻りました。");
@@ -172,8 +154,6 @@ async function refresh() {
 //   ・ユーザーが自分で「最初に戻る」を押したとき → true（席をすぐ空ける）
 //   ・通信不調で諦めて戻るとき → false（部屋は生かしたまま自分だけ戻る。復帰の余地を残す）
 function backToTop(tellServer) {
-  clog("backToTop(tellServer=" + tellServer + ") 実行 → トップ画面へ戻る" +
-       (tellServer ? "（サーバーへ退室を送信）" : "（退室は送らない）"));
   if (tellServer && session) {
     const s = session;
     api("/api/leave", { code: s.code, token: s.token }).catch(() => {});
@@ -197,18 +177,14 @@ function backToTop(tellServer) {
 // ユーザーが自分で部屋を出るとき（ボタン）。誤タップで対戦を壊さないよう確認を挟む。
 // ここでだけサーバーに退室を伝える（席をすぐ空ける）。自動復帰では退室を送らない。
 function leaveRoom() {
-  clog("leaveRoom() が呼ばれた（この後、確認ダイアログを出す）");
-  if (!confirm("この部屋から抜けて、最初の画面に戻りますか？")) { clog("確認=キャンセル → 部屋に残る"); return; }
-  clog("確認=OK → 退室する");
+  if (!confirm("この部屋から抜けて、最初の画面に戻りますか？")) return;
   backToTop(true);
 }
 
 // ===========================================================================
 // 画面の切り替えと描画
 // ===========================================================================
-let _lastScreen = null;
 function showScreen(id) {
-  if (id !== _lastScreen) { clog("画面きりかえ → " + id); _lastScreen = id; }  // 【計測】画面遷移を記録
   for (const s of document.querySelectorAll(".screen")) s.classList.add("hidden");
   if (id) $(id).classList.remove("hidden");
 }
@@ -720,13 +696,6 @@ $("btn-rematch").addEventListener("click", async () => {
 //   ・部屋に居ないときは refresh() が即 return するだけ（無害）。
 //   ・部屋を作る/入ると、次の確認で自動的に最新状態から画面が描かれる。
 // ===========================================================================
-// 【計測】ページ読み込み・離脱・アプリ切替（バックグラウンド化）の瞬間を記録する。
-//   これらが「戻る／退室」と時間的に一致するかを、事実で確かめるため。
-clog("ページ読み込み（session=" + (session ? session.seat + "/" + session.code : "なし") + "）");
-window.addEventListener("pagehide", () => clog("pagehide（ページ離脱/バックグラウンド化）"));
-window.addEventListener("pageshow", (e) => clog("pageshow（復帰 persisted=" + e.persisted + "）"));
-document.addEventListener("visibilitychange", () => clog("visibilitychange → " + document.visibilityState));
-
 setInterval(refresh, 1000);
 if (session) {
   refresh();               // すぐ1回

@@ -4,13 +4,13 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>軍人将棋 オンライン対戦</title>
-  <link rel="stylesheet" href="style.css?v=8">
+  <link rel="stylesheet" href="style.css?v=9">
 </head>
 <body>
   <header>
     <h1>軍人将棋</h1>
     <p class="tagline">審判あり・オンライン対戦</p>
-    <p style="text-align:center;font-size:0.8em;opacity:0.6;margin:2px 0 0;">バージョン v8（2026-07-22 計測版）</p>
+    <p style="text-align:center;font-size:0.8em;opacity:0.6;margin:2px 0 0;">バージョン v9（2026-07-22）</p>
   </header>
 
   <main id="stage" class="stage">
@@ -31,11 +31,11 @@
   <!-- 画面2: 相手待ち -->
   <section id="screen-wait" class="screen hidden">
     <div class="card">
-      <h2>相手を待っています…</h2>
-      <p>下の「あいことば」を友人に伝えてください。</p>
+      <h2>あなたはホストです。友だちの入室を待っています…</h2>
+      <p>下の「あいことば」を友だちに伝えてください。<br><b>あなたはこのまま何も押さずに待ってください（自分では入室しません）。</b></p>
       <div id="room-code" class="room-code"></div>
-      <p class="hint">友人が同じあいことばで入室すると、自動で始まります。</p>
-      <button id="btn-leave-wait" class="sub-btn back-btn">← 最初に戻る</button>
+      <p class="hint">友だちが「入室する」でこのあいことばを入れると、自動で対戦が始まります。</p>
+      <button id="btn-leave-wait" class="sub-btn back-btn">× この部屋をやめる（最初に戻る）</button>
     </div>
   </section>
 
@@ -94,6 +94,6 @@
   <!-- お知らせ（エラーなど） -->
   <div id="toast" class="toast hidden"></div>
 
-  <script src="client.js?v=8"></script>
+  <script src="client.js?v=9"></script>
 </body>
 </html>
