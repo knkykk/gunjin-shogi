@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>軍人将棋 オンライン対戦</title>
+  <link rel="stylesheet" href="style.css?v=5">
+</head>
+<body>
+  <header>
+    <h1>軍人将棋</h1>
+    <p class="tagline">審判あり・オンライン対戦</p>
+  </header>
+
+  <main id="stage" class="stage">
+
+  <!-- 画面1: トップ（部屋を作る / 入る） -->
+  <section id="screen-top" class="screen">
+    <div class="card">
+      <button id="btn-create" class="big-btn">部屋を作る</button>
+      <p class="hint">部屋を作ると、あいことば（部屋コード）が出ます。<br>それを友人に伝えてください。</p>
+    </div>
+    <div class="card">
+      <label for="join-code">部屋に入る</label>
+      <input id="join-code" type="text" maxlength="4" placeholder="あいことば4文字" autocomplete="off">
+      <button id="btn-join" class="big-btn">入室する</button>
+    </div>
+  </section>
+
+  <!-- 画面2: 相手待ち -->
+  <section id="screen-wait" class="screen hidden">
+    <div class="card">
+      <h2>相手を待っています…</h2>
+      <p>下の「あいことば」を友人に伝えてください。</p>
+      <div id="room-code" class="room-code"></div>
+      <p class="hint">友人が同じあいことばで入室すると、自動で始まります。</p>
+      <button id="btn-leave-wait" class="sub-btn back-btn">← 最初に戻る</button>
+    </div>
+  </section>
+
+  <!-- 画面3: 配置フェーズ -->
+  <section id="screen-setup" class="screen hidden">
+    <div class="card">
+      <button id="btn-leave-setup" class="sub-btn back-btn">← 最初に戻る（部屋を出る）</button>
+      <h2>駒を配置しましょう（全23枚）</h2>
+      <p class="hint">下の駒置き場から駒を選び、自陣（色つきのマス）をタップして置きます。置いた駒はタップで持ち上げ→<b>空きマスをタップで移動／別の駒をタップで入れ替え／同じ駒をもう一度タップで置き場に戻す</b>。★が自分の総司令部で、相手に大将〜少佐で占領されると負けなのでしっかり守りましょう。急ぐときは「おまかせ配置」でも置けます。</p>
+      <div id="tray" class="tray"></div>
+      <div class="setup-actions">
+        <button id="btn-auto" class="sub-btn">おまかせ配置</button>
+        <button id="btn-clear" class="sub-btn">全部戻す</button>
+        <button id="btn-ready" class="big-btn" disabled>配置完了！</button>
+      </div>
+      <p id="setup-status" class="status"></p>
+    </div>
+  </section>
+
+  <!-- 画面4: 対戦 -->
+  <section id="screen-play" class="screen hidden">
+    <div id="turn-banner" class="banner"></div>
+  </section>
+
+  <!-- 盤面（配置フェーズと対戦フェーズで共用） -->
+  <div id="board-wrap" class="hidden">
+    <div id="board"></div>
+  </div>
+
+  </main>
+
+  <!-- ルール早見表（折りたたみ） -->
+  <details id="rules-ref" class="rules-ref hidden">
+    <summary>ルール早見表（タップで開く）</summary>
+    <div class="rules-body">
+      <p><b>勝ち方</b>：相手の総司令部（★）を大将〜少佐で占領する／相手の動ける駒を全滅させる。</p>
+      <p><b>強さ（強い→弱い）</b>：大将＞中将＞少将＞大佐＞中佐＞少佐＞大尉＞中尉＞少尉</p>
+      <ul>
+        <li><b>スパイ</b>：大将にだけ勝つ（他は負け）</li>
+        <li><b>タンク・ヒコーキ</b>：大佐以下に勝つ。将官（大将・中将・少将）には負ける。ヒコーキはタンクに勝つ</li>
+        <li><b>騎兵・工兵</b>：階級には勝てない（工兵は地雷を撤去でき、ヒコーキと共に地雷に一方的に勝つ）</li>
+        <li><b>地雷</b>：工兵・ヒコーキ以外に勝つが、勝つと自分も消える（相打ち）。動かない</li>
+        <li><b>軍旗</b>：すぐ後ろの味方の駒と同じ強さで戦う。動かない</li>
+      </ul>
+      <p><b>動き</b>：ふつうの駒＝1マス／工兵＝縦横どこまでも／タンク・騎兵＝周囲1マスか前2マス／ヒコーキ＝縦どこまでも・横1マス（川も飛び越える）。中央の川（中央の帯）は渡れません。渡れるのは「橋」2か所だけで、橋の上には止まれず、手前から向こう側へ一気に進みます。総司令部（★）は横長ですが“1マス”です。</p>
+    </div>
+  </details>
+
+  <!-- ログ -->
+  <div id="log-wrap" class="hidden">
+    <h3>戦況</h3>
+    <ul id="log"></ul>
+    <button id="btn-rematch" class="big-btn hidden">もう一局</button>
+  </div>
+
+  <!-- お知らせ（エラーなど） -->
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="client.js?v=5"></script>
+</body>
+</html>
