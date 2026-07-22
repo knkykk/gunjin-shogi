@@ -3,23 +3,29 @@
 
 "use strict";
 
-// ---- セッション情報（このタブ専用。2タブ／2ブラウザで別々の対戦者になれる）----
-// プライベートモード等で sessionStorage が使えなくても落ちないよう、必ず try で包む。
+// ---- セッション情報（自分がどの部屋のどちら側か）----
+// localStorage に保存する。理由：スマホで別アプリ（LINE等）に切り替えたり、
+// ブラウザがタブを一時的に捨てて再読み込みしても、記憶が消えず対戦に戻れるようにするため。
+// （sessionStorage だとアプリ切り替えで消えることがあった）
+// プライベートモード等で使えなくても落ちないよう、必ず try で包む。
+// ※同じブラウザの2タブで別々の対戦者になることはできなくなる。1台で2人試すときは
+//   「普通のウィンドウ＋シークレット（プライベート）ウィンドウ」を使う。
 const SKEY = "gunjin";
 function loadSession() {
-  try { return JSON.parse(sessionStorage.getItem(SKEY) || "null"); }
+  try { return JSON.parse(localStorage.getItem(SKEY) || "null"); }
   catch (e) { return null; }
 }
 function saveSession(s) {
-  try { sessionStorage.setItem(SKEY, JSON.stringify(s)); } catch (e) { /* 使えなくても続行 */ }
+  try { localStorage.setItem(SKEY, JSON.stringify(s)); } catch (e) { /* 使えなくても続行 */ }
 }
 function clearSession() {
-  try { sessionStorage.removeItem(SKEY); } catch (e) { /* 無視 */ }
+  try { localStorage.removeItem(SKEY); } catch (e) { /* 無視 */ }
 }
 
 let session = loadSession();   // {code, token, seat}
 let state = null;              // サーバーから来た最新の状態
 let lastVersion = -1;
+let failStreak = 0;            // 状態確認が連続で失敗した回数（一瞬の通信の揺れで即退出しないため）
 
 // 配置フェーズ用の一時データ
 let placement = [];            // [{row, col, kind}]  ※実座標
@@ -112,8 +118,10 @@ let refreshing = false;   // 前回の確認が終わる前に重ねて走らな
 async function refresh() {
   if (!session || refreshing) return;   // 部屋にいなければ何もしない
   refreshing = true;
+  const usedToken = session.token;      // この確認が使ったトークン（返事が来る頃の取り違え防止）
   try {
-    const s = await api("/api/state", { code: session.code, token: session.token });
+    const s = await api("/api/state", { code: session.code, token: usedToken });
+    failStreak = 0;                     // 1回でも成功したら失敗カウントはリセット
     state = s;
     if (state.version !== lastVersion) {
       lastVersion = state.version;
@@ -125,20 +133,28 @@ async function refresh() {
       }
     }
   } catch (e) {
-    // 部屋が無い/席が明け渡された → トップへ戻す
+    // 返事が返る頃にセッションが変わっていたら（部屋を作り直した等）、
+    // その“古い返事”で今の状態を壊さない。
+    if (!session || session.token !== usedToken) return;
+    // 部屋が無い/席が確認できない。ただし一瞬の通信の揺れやアプリ切り替え直後にも
+    // 起きうるので、1回では退出しない。数回連続で初めて諦める。
     if (e.code === 403 || e.code === 404) {
-      leaveRoom();
-      toast("接続が切れたため、最初の画面に戻りました。");
+      failStreak++;
+      if (failStreak >= 6) {            // 約6秒つながらなければ本当に切れたとみなす
+        backToTop(false);               // 相手を巻き込まないよう、サーバーへ退室は伝えない
+        toast("接続が切れたため、最初の画面に戻りました。");
+      }
     }
     // それ以外（一時的な通信エラー等）は黙ってスルーし、次の確認に任せる
   } finally {
     refreshing = false;
   }
 }
-// 部屋を出て、最初のトップ画面に戻す。（ポーリングは常時オンのまま。session が無ければ何もしない）
-function leaveRoom() {
-  // サーバーに退室を伝えて自分の席をすぐ空ける（失敗しても続行）
-  if (session) {
+// 最初のトップ画面に戻す。tellServer=true のときだけサーバーに退室を伝える。
+//   ・ユーザーが自分で「最初に戻る」を押したとき → true（席をすぐ空ける）
+//   ・通信不調で諦めて戻るとき → false（部屋は生かしたまま自分だけ戻る。復帰の余地を残す）
+function backToTop(tellServer) {
+  if (tellServer && session) {
     const s = session;
     api("/api/leave", { code: s.code, token: s.token }).catch(() => {});
   }
@@ -146,6 +162,7 @@ function leaveRoom() {
   session = null;
   state = null;
   lastVersion = -1;
+  failStreak = 0;
   placement = [];
   selectedKind = null;
   selectedPlace = null;
@@ -157,6 +174,8 @@ function leaveRoom() {
   hide("log-wrap");
   showScreen("screen-top");
 }
+// ユーザーが自分で部屋を出るとき（ボタン）。サーバーにも退室を伝える。
+function leaveRoom() { backToTop(true); }
 
 // ===========================================================================
 // 画面の切り替えと描画

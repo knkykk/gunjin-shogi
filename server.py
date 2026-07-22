@@ -339,6 +339,7 @@ def handle_move(room, seat, frm, to):
 
 def handle_leave(room, seat):
     """その席のプレイヤーが部屋を出る。席をすぐ空けて、相手が入り直せるようにする。"""
+    dlog(f"LEAVE: 部屋 {room['code']} の席{seat} が退室 → phase={room['phase']}")
     room["players"][seat] = None
     room["last_seen"][seat] = 0
     room["ready"][seat] = False
@@ -437,12 +438,17 @@ class Handler(BaseHTTPRequestHandler):
                 return
 
             # ここから先は部屋と本人確認が必要
-            room = rooms.get((data.get("code") or "").upper())
+            code_up = (data.get("code") or "").upper()
+            tok_head = str(data.get("token"))[:6]
+            room = rooms.get(code_up)
             if not room:
+                dlog(f"404 部屋なし: path={path} code={code_up!r} token={tok_head}…")
                 self.reply(404, {"error": "部屋が見つかりません。"})
                 return
             seat = seat_of(room, data.get("token"))
             if not seat:
+                dlog(f"403 席不一致: path={path} code={code_up} token={tok_head}… "
+                     f"A={str(room['players']['A'])[:6]}… B={str(room['players']['B'])[:6]}…")
                 self.reply(403, {"error": "この部屋の参加者として確認できませんでした。"})
                 return
 
