@@ -62,6 +62,19 @@ def empty_board():
     return [[None for _ in range(rules.COLS)] for _ in range(rules.ROWS)]
 
 
+def snapshot_board(board):
+    """盤面を“正体つき”で丸ごと複製する（感想戦の記録用）。
+    ※この正体つきデータは対戦が終わるまで相手には渡さない（view_forで制御）。"""
+    snap = []
+    for r in range(rules.ROWS):
+        row = []
+        for c in range(rules.COLS):
+            cell = board[r][c]
+            row.append({"owner": cell["owner"], "kind": cell["kind"]} if cell else None)
+        snap.append(row)
+    return snap
+
+
 def create_room():
     code = new_code()
     token = new_token()
@@ -73,9 +86,12 @@ def create_room():
         "ready": {"A": False, "B": False},
         "turn": "A",
         "winner": None,
+        "resigned": None,            # 投了した軍（A/B）。無ければ None
         "log": [],
         "last_move": None,
         "last_battle": None,
+        # 感想戦用：対戦開始からの各局面（正体つき）を1手ごとに記録していく
+        "history": [],
         "version": 1,
         # 各席が最後に通信してきた時刻（抜けた席を空けるために使う）
         "last_seen": {"A": time.time(), "B": 0},
@@ -120,13 +136,14 @@ def view_for(room, seat):
         board_view.append(row_view)
 
     opponent = "B" if seat == "A" else "A"
-    return {
+    v = {
         "code": room["code"],
         "seat": seat,
         "phase": room["phase"],
         "turn": room["turn"],
         "ready": room["ready"],
         "winner": room["winner"],
+        "resigned": room.get("resigned"),
         "log": room["log"],
         "last_move": room["last_move"],
         "last_battle": room["last_battle"],
@@ -140,9 +157,14 @@ def view_for(room, seat):
         # 盤の形（画面が川・橋・総司令部を描くために渡す）
         "border_row": rules.BORDER_ROW,
         "gate_cols": sorted(rules.GATE_COLS),
-        "hq": {k: list(v) for k, v in rules.HQ.items()},
-        "hq_phantom": {k: list(v) for k, v in rules.HQ_PHANTOM.items()},
+        "hq": {k: list(val) for k, val in rules.HQ.items()},
+        "hq_phantom": {k: list(val) for k, val in rules.HQ_PHANTOM.items()},
     }
+    # 感想戦の記録（正体つき）は、対戦が終わってからだけ両者に渡す。
+    # 対戦中に渡すと相手の駒がバレるので、over のときに限定する。
+    if room["phase"] == "over":
+        v["history"] = room.get("history", [])
+    return v
 
 
 def seat_of(room, token):
@@ -227,6 +249,8 @@ def handle_setup(room, seat, placement):
     if room["ready"]["A"] and room["ready"]["B"]:
         room["phase"] = "play"
         room["turn"] = "A"
+        # 感想戦の記録を開始（0手目＝配置直後の局面）
+        room["history"] = [{"board": snapshot_board(room["board"]), "move": None, "battle": None}]
         add_log(room, "対戦開始！ A軍の手番です。")
     bump(room)
     return None
@@ -283,6 +307,7 @@ def handle_move(room, seat, frm, to):
     opponent = "B" if seat == "A" else "A"
     target = board[tr][tc]
 
+    move_battle = None   # この1手で起きた戦闘の結果（感想戦の記録用。空き移動なら None）
     # 駒の種類は伏せるルールなので、ログ・戦闘結果に駒名は一切出さない（勝った軍だけ書く）
     if target is None:
         # 空きマスへ移動
@@ -310,8 +335,15 @@ def handle_move(room, seat, frm, to):
             board[tr][tc] = None
             room["last_battle"] = "相打ち（両軍の駒が1つずつ取られた）"
             add_log(room, "⚔ " + room["last_battle"])
+        move_battle = room["last_battle"]
 
     room["last_move"] = {"from": [fr, fc], "to": [tr, tc]}
+    # 感想戦の記録に、この1手を指したあとの局面を追加（勝敗が決まる手も含めて残す）
+    room["history"].append({
+        "board": snapshot_board(board),
+        "move": {"from": [fr, fc], "to": [tr, tc]},
+        "battle": move_battle,
+    })
 
     # 勝敗チェック(1)：相手の総司令部を占領した
     lander = board[tr][tc]
@@ -350,6 +382,19 @@ def handle_leave(room, seat):
     bump(room)
 
 
+def handle_resign(room, seat):
+    """投了（負けを認める）。押した本人の負けで対戦を終了する。"""
+    if room["phase"] != "play":
+        return "対戦中だけ投了できます。"
+    opponent = "B" if seat == "A" else "A"
+    room["phase"] = "over"
+    room["winner"] = opponent
+    room["resigned"] = seat
+    add_log(room, f"{seat}軍が投了しました。{opponent}軍の勝ちです。")
+    bump(room)
+    return None
+
+
 def handle_rematch(room):
     """もう一局。盤面を空にして配置フェーズからやり直す。"""
     room["board"] = empty_board()
@@ -357,8 +402,10 @@ def handle_rematch(room):
     room["phase"] = "setup"
     room["turn"] = "A"
     room["winner"] = None
+    room["resigned"] = None
     room["last_move"] = None
     room["last_battle"] = None
+    room["history"] = []
     room["log"] = []
     add_log(room, "もう一局！ 駒を配置してください。")
     bump(room)
@@ -472,6 +519,14 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/leave":
                 handle_leave(room, seat)
                 self.reply(200, {"ok": True})
+                return
+
+            if path == "/api/resign":
+                err = handle_resign(room, seat)
+                if err:
+                    self.reply(400, {"error": err})
+                else:
+                    self.reply(200, view_for(room, seat))
                 return
 
             if path == "/api/rematch":
