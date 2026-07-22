@@ -431,6 +431,13 @@ class Handler(BaseHTTPRequestHandler):
                     self.reply(200, result)
                 return
 
+            # 【一時的な計測用】画面(client.js)が送ってくる動作ログを、そのままサーバーログに残す。
+            # 本人確認は不要（席が無い状態の動きも記録したいため）。原因特定後に削除する。
+            if path == "/api/clientlog":
+                dlog(f"CLIENT[pid={data.get('pid')} {data.get('who')}] {data.get('msg')}")
+                self.reply(200, {"ok": True})
+                return
+
             # ここから先は部屋と本人確認が必要
             code_up = (data.get("code") or "").upper()
             tok_head = str(data.get("token"))[:6]
