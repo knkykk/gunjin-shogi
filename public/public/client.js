@@ -676,10 +676,36 @@ function activeLastMove() {
   return state.last_move;
 }
 
+// ---- 盤の大きさを画面に合わせる ----
+// パソコン（横幅900px以上）では、右側の領域の縦と横の余白から「マス1つの大きさ」を決め、
+// 盤がはみ出さない最大の大きさにする。スマホでは従来どおり横幅いっぱい（CSSに任せる）。
+const GAP = 3, PAD = 3;   // style.css の #board の gap と padding と同じ値
+function fitBoard() {
+  const board = $("board");
+  if (!state) return;
+  const area = board.closest(".boardarea");
+  if (!area || window.innerWidth < 900) {
+    board.style.width = ""; board.style.height = "";
+    board.style.removeProperty("--cell-font");
+    return;
+  }
+  const rect = area.getBoundingClientRect();
+  const availW = rect.width - 24, availH = rect.height - 24;   // 領域のpadding(12px×2)ぶんを引く
+  const cols = state.cols, rows = state.rows;
+  const cw = (availW - PAD * 2 - GAP * (cols - 1)) / cols;
+  const ch = (availH - PAD * 2 - GAP * (rows - 1)) / rows;
+  const cell = Math.max(24, Math.floor(Math.min(cw, ch)));
+  board.style.width = (cell * cols + GAP * (cols - 1) + PAD * 2) + "px";
+  board.style.height = (cell * rows + GAP * (rows - 1) + PAD * 2) + "px";
+  board.style.setProperty("--cell-font", Math.round(cell * 0.3) + "px");
+}
+window.addEventListener("resize", () => { if (state) fitBoard(); });
+
 function renderBoard() {
   const board = $("board");
   board.style.gridTemplateColumns = `repeat(${state.cols}, 1fr)`;
   board.style.gridTemplateRows = `repeat(${state.rows}, 1fr)`;
+  fitBoard();
   board.innerHTML = "";
 
   const targets = (state.phase === "play" && selectedCell)
