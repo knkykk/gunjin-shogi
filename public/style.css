@@ -29,19 +29,47 @@ header h1 { margin: 0; font-size: 28px; letter-spacing: 4px; }
 
 .hidden { display: none !important; }
 
-/* 盤と操作パネルを横並びにする土台（画面が狭いと自動で上下に折り返す） */
-.stage {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
-  justify-content: center;
-  align-items: flex-start;
-  max-width: 1040px;
-  margin: 0 auto;
-  padding: 8px 12px;
+/* 全体の骨組み。
+   パソコン（横幅900px以上）：左の列（題名・ボタン・ルール・戦況）＋右の盤の領域。盤は右側いっぱいに広げる。
+   スマホ（900px未満）：従来どおり上から順に積む。 */
+.layout { display: block; }
+.side { padding: 0 12px; }
+.stage { padding: 0; }
+.screen { padding: 0; }
+
+@media (min-width: 900px) {
+  body { padding-bottom: 0; height: 100vh; overflow: hidden; }
+  .layout {
+    display: grid;
+    grid-template-columns: 400px 1fr;
+    height: 100vh;
+  }
+  .side {
+    height: 100vh;
+    overflow-y: auto;
+    padding: 0 16px 24px;
+    border-right: 1px solid #e3ddce;
+    background: #faf8f3;
+  }
+  .side header { text-align: left; padding: 14px 0 6px; }
+  .side header h1 { font-size: 24px; letter-spacing: 3px; }
+  .side header p { text-align: left !important; }
+  .side .card { margin: 10px 0; max-width: none; }
+  .side .card h2 { font-size: 18px; }
+  .side #log-wrap, .side .rules-ref { max-width: none; margin-left: 0; margin-right: 0; padding: 0; }
+  .side #log-wrap { margin-top: 14px; }
+  .side .rules-ref { margin-top: 12px; }
+  .boardarea {
+    height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 12px;
+    overflow: hidden;
+  }
+  /* 盤の大きさはJS（fitBoard）が画面の余白から計算して決める */
+  #board-wrap { max-width: none; width: auto; flex: none; }
 }
-.screen { flex: 1 1 320px; max-width: 460px; padding: 0; }
-#board-wrap { flex: 0 1 auto; }
 
 .card {
   background: #fff;
@@ -140,7 +168,7 @@ input[type=text] {
 .setup-actions .big-btn { flex: 1; margin-top: 0; min-width: 140px; }
 
 /* 盤面 */
-#board-wrap { flex: 1 1 300px; max-width: 460px; width: 100%; }
+#board-wrap { max-width: 460px; width: 100%; margin: 0 auto; }
 #board {
   width: 100%;
   display: grid;
@@ -157,7 +185,7 @@ input[type=text] {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: clamp(11px, 3.4vw, 16px);
+  font-size: var(--cell-font, clamp(11px, 3.4vw, 16px));
   font-weight: bold;
   cursor: pointer;
   position: relative;

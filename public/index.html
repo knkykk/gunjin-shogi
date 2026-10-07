@@ -4,16 +4,18 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>軍人将棋 オンライン対戦</title>
-  <link rel="stylesheet" href="style.css?v=13">
+  <link rel="stylesheet" href="style.css?v=14">
 </head>
 <body>
+<div class="layout">
+<aside class="side">
   <header>
     <h1>軍人将棋</h1>
     <p class="tagline">審判あり・オンライン対戦</p>
-    <p style="text-align:center;font-size:0.8em;opacity:0.6;margin:2px 0 0;">バージョン v13（2026-07-22）</p>
+    <p style="text-align:center;font-size:0.8em;opacity:0.6;margin:2px 0 0;">バージョン v14（2026-10-07）</p>
   </header>
 
-  <main id="stage" class="stage">
+  <div id="stage" class="stage">
 
   <!-- 画面1: トップ（部屋を作る / 入る） -->
   <section id="screen-top" class="screen">
@@ -76,12 +78,7 @@
     </div>
   </section>
 
-  <!-- 盤面（配置フェーズと対戦フェーズで共用） -->
-  <div id="board-wrap" class="hidden">
-    <div id="board"></div>
   </div>
-
-  </main>
 
   <!-- ルール早見表（折りたたみ） -->
   <details id="rules-ref" class="rules-ref hidden">
@@ -107,9 +104,19 @@
     <button id="btn-rematch" class="big-btn hidden">もう一局</button>
   </div>
 
+</aside>
+
+  <!-- 盤面（配置フェーズと対戦フェーズで共用）。パソコンでは右側いっぱいに広げる -->
+  <main class="boardarea">
+    <div id="board-wrap" class="hidden">
+      <div id="board"></div>
+    </div>
+  </main>
+</div>
+
   <!-- お知らせ（エラーなど） -->
   <div id="toast" class="toast hidden"></div>
 
-  <script src="client.js?v=13"></script>
+  <script src="client.js?v=14"></script>
 </body>
 </html>
