@@ -69,9 +69,6 @@ header h1 { margin: 0; font-size: 28px; letter-spacing: 4px; }
   }
   /* 盤の大きさはJS（fitBoard）が画面の余白から計算して決める */
   #board-wrap { max-width: none; width: auto; flex: none; }
-  /* マスの「正方形を保つ」指定が、計算で決めた行・列の幅を押し広げないようにする
-     （総司令部の横長マスが行を1.5px太らせ、右と下がはみ出していた） */
-  #board .cell { min-width: 0; min-height: 0; aspect-ratio: auto; }
 }
 
 .card {
@@ -173,7 +170,7 @@ input[type=text] {
 /* 盤面 */
 #board-wrap { max-width: 460px; width: 100%; margin: 0 auto; }
 #board {
-  width: 100%;
+  margin: 0 auto;
   display: grid;
   gap: 3px;
   background: var(--line);
@@ -182,13 +179,14 @@ input[type=text] {
   touch-action: manipulation;
 }
 .cell {
-  aspect-ratio: 1 / 1;
+  width: 100%; height: 100%;   /* 大きさは行と列の幅（JSのfitBoardがピクセルで決める）に従う */
+  min-width: 0; min-height: 0;
   background: var(--cell);
   border-radius: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: var(--cell-font, clamp(11px, 3.4vw, 16px));
+  font-size: var(--cell-font, 16px);
   font-weight: bold;
   cursor: pointer;
   position: relative;
@@ -211,7 +209,6 @@ input[type=text] {
 .cell.bridge { background: #dfe8ee; cursor: default; border-radius: 0; box-shadow: none; }
 
 /* 総司令部：横2マス分にまたがる“ひとつのマス” */
-.cell.hq-mine, .cell.hq-enemy { aspect-ratio: 2 / 1; }
 .cell.hq-mine { background: #cfe3f7; }
 .cell.hq-enemy { background: #f7d9d9; }
 /* 「総司令部」の見出しを上部に薄く表示（駒より下） */
@@ -289,6 +286,7 @@ input[type=text] {
 }
 .rules-body ul { padding-left: 20px; margin: 6px 0; }
 .rules-body li { margin: 3px 0; }
+.rules-body .credit { font-size: 11px; color: #7a7266; }
 
 .toast {
   position: fixed;
@@ -322,7 +320,7 @@ input[type=text] {
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
-  margin-top: 8px;
+  margin: 8px 0 4px;
 }
 .sound-btn {
   padding: 5px 12px;

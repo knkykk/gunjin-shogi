@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>軍人将棋 オンライン対戦</title>
-  <link rel="stylesheet" href="style.css?v=15">
+  <link rel="stylesheet" href="style.css?v=18">
 </head>
 <body>
 <div class="layout">
@@ -12,7 +12,7 @@
   <header>
     <h1>軍人将棋</h1>
     <p class="tagline">審判あり・オンライン対戦</p>
-    <p style="text-align:center;font-size:0.8em;opacity:0.6;margin:2px 0 0;">バージョン v15（2026-10-07）</p>
+    <p style="text-align:center;font-size:0.8em;opacity:0.6;margin:2px 0 0;">バージョン v18（2026-10-07）</p>
   </header>
 
   <div id="stage" class="stage">
@@ -60,10 +60,6 @@
   <!-- 画面4: 対戦 -->
   <section id="screen-play" class="screen hidden">
     <div id="turn-banner" class="banner"></div>
-    <div class="play-controls">
-      <button id="btn-sound" class="sub-btn sound-btn">🔊 音 オン</button>
-      <button id="btn-resign" class="sub-btn resign-btn hidden">投了</button>
-    </div>
 
     <!-- 感想戦（対戦が終わったら表示。1手ずつ振り返る） -->
     <div id="review-panel" class="review hidden">
@@ -80,6 +76,13 @@
 
   </div>
 
+  <!-- 音・BGM・投了のボタン（配置中と対戦中に表示。投了は対戦中だけ） -->
+  <div id="play-controls" class="play-controls hidden">
+    <button id="btn-sound" class="sub-btn sound-btn">🔊 音 オン</button>
+    <button id="btn-bgm" class="sub-btn sound-btn">♪ BGM オン</button>
+    <button id="btn-resign" class="sub-btn resign-btn hidden">投了</button>
+  </div>
+
   <!-- ルール早見表（折りたたみ） -->
   <details id="rules-ref" class="rules-ref hidden">
     <summary>ルール早見表（タップで開く）</summary>
@@ -93,6 +96,7 @@
         <li><b>地雷</b>：工兵・ヒコーキ以外に勝つが、勝つと自分も消える（相打ち）。動かない</li>
         <li><b>軍旗</b>：すぐ後ろの味方の駒と同じ強さで戦う。動かない</li>
       </ul>
+      <p class="credit">BGM：配置中はモーツァルト「レクイエム 怒りの日」、対戦中はブラームス「交響曲第1番 第1楽章」。音源は CMSL クラシック名曲サウンドライブラリー（ANDO TOWA）、CC BY 2.1 JP。</p>
       <p><b>動き</b>：ふつうの駒＝1マス／工兵＝縦横どこまでも／タンク・騎兵＝周囲1マスか前2マス／ヒコーキ＝縦どこまでも・横1マス（川も飛び越える）。中央の川（中央の帯）は渡れません。渡れるのは「橋」2か所だけで、橋の上には止まれず、手前から向こう側へ一気に進みます。総司令部（★）は横長ですが“1マス”です。</p>
     </div>
   </details>
@@ -117,6 +121,6 @@
   <!-- お知らせ（エラーなど） -->
   <div id="toast" class="toast hidden"></div>
 
-  <script src="client.js?v=15"></script>
+  <script src="client.js?v=18"></script>
 </body>
 </html>
