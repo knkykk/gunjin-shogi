@@ -436,7 +436,10 @@ CONTENT_TYPES = {
     ".html": "text/html; charset=utf-8",
     ".css": "text/css; charset=utf-8",
     ".js": "application/javascript; charset=utf-8",
+    ".mp3": "audio/mpeg",
+    ".m4a": "audio/mp4",
 }
+AUDIO_EXTS = {".mp3", ".m4a"}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -462,8 +465,12 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
-        # 画面ファイル(HTML/CSS/JS)は毎回最新を渡す（ブラウザに古い版を使い回させない）
-        self.send_header("Cache-Control", "no-store, must-revalidate")
+        if ext in AUDIO_EXTS:
+            # 音楽ファイルは大きいので、ブラウザに1日覚えさせて毎回読み直さない
+            self.send_header("Cache-Control", "public, max-age=86400")
+        else:
+            # 画面ファイル(HTML/CSS/JS)は毎回最新を渡す（ブラウザに古い版を使い回させない）
+            self.send_header("Cache-Control", "no-store, must-revalidate")
         self.end_headers()
         self.wfile.write(body)
 
