@@ -69,6 +69,9 @@ header h1 { margin: 0; font-size: 28px; letter-spacing: 4px; }
   }
   /* 盤の大きさはJS（fitBoard）が画面の余白から計算して決める */
   #board-wrap { max-width: none; width: auto; flex: none; }
+  /* マスの「正方形を保つ」指定が、計算で決めた行・列の幅を押し広げないようにする
+     （総司令部の横長マスが行を1.5px太らせ、右と下がはみ出していた） */
+  #board .cell { min-width: 0; min-height: 0; aspect-ratio: auto; }
 }
 
 .card {
@@ -233,6 +236,13 @@ input[type=text] {
 .pc.enemy { clip-path: polygon(10% 0, 90% 0, 82% 80%, 50% 100%, 18% 80%); padding: 4% 8% 8%; }
 /* 総司令部は横長マスなので、その中の駒だけ正方形に固定して歪みを防ぐ */
 .cell.hq-mine .pc, .cell.hq-enemy .pc { width: auto; height: 92%; aspect-ratio: 1 / 1; }
+/* すべって動く途中の駒（本物の駒は着地まで隠し、この駒だけが盤の上を移動する） */
+#board-wrap { position: relative; }
+.pc.ghost {
+  position: absolute; z-index: 5; pointer-events: none;
+  transition: transform 0.26s cubic-bezier(0.2, 0.7, 0.2, 1);
+  filter: drop-shadow(0 3px 3px rgba(0,0,0,0.35));
+}
 .pc.a { background: var(--a-color); }
 .pc.b { background: var(--b-color); }
 .pc.hidden-pc { background: #8a8175; }

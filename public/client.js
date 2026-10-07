@@ -38,6 +38,9 @@ let selectedCell = null;       // {r, c} 実座標
 // 感想戦用：いま何手目の局面を見ているか（over のときだけ使う。null=未設定）
 let reviewIndex = null;
 
+// いま画面に描いてある「生の盤」（駒がすべるアニメーションで、動く前の駒の正体を知るために使う）
+let shownBoard = null;
+
 const $ = (id) => document.getElementById(id);
 
 // ---- サーバーへの通信 ----
@@ -76,23 +79,67 @@ function saveSoundPref(on) {
 let soundOn = loadSoundPref();
 
 let audioCtx = null;
-function playMoveSound() {
-  if (!soundOn) return;
+function getAudio() {
+  if (!soundOn) return null;
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return null;
+  audioCtx = audioCtx || new AC();
+  if (audioCtx.state === "suspended") audioCtx.resume();  // 一度クリックした後は鳴らせる
+  return audioCtx;
+}
+// 駒が動くときの音は3段階。人が「今、動いた」と分かりやすいように、
+//   直前＝持ち上げる「ピッ」（高く短い）／途中＝すべる「シュッ」（息のような音）／終わり＝着地の「コッ」（木の駒）
+function playPickSound() {
   try {
-    const AC = window.AudioContext || window.webkitAudioContext;
-    if (!AC) return;
-    audioCtx = audioCtx || new AC();
-    if (audioCtx.state === "suspended") audioCtx.resume();  // 一度クリックした後は鳴らせる
-    const now = audioCtx.currentTime;
-    const o = audioCtx.createOscillator();
-    const g = audioCtx.createGain();
+    const ctx = getAudio(); if (!ctx) return;
+    const now = ctx.currentTime;
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = "sine";
+    o.frequency.setValueAtTime(880, now);
+    o.frequency.exponentialRampToValueAtTime(1180, now + 0.05);
+    g.gain.setValueAtTime(0.0001, now);
+    g.gain.exponentialRampToValueAtTime(0.10, now + 0.006);
+    g.gain.exponentialRampToValueAtTime(0.0001, now + 0.07);
+    o.connect(g); g.connect(ctx.destination);
+    o.start(now); o.stop(now + 0.08);
+  } catch (e) { /* 音が出せない環境でも黙ってスルー */ }
+}
+function playSlideSound(durationSec) {
+  try {
+    const ctx = getAudio(); if (!ctx) return;
+    const now = ctx.currentTime;
+    const dur = Math.max(0.15, durationSec || 0.26);
+    // ノイズを帯域フィルタに通して「シュッ」。音の高さを上げながら消す
+    const len = Math.floor(ctx.sampleRate * dur);
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+    const src = ctx.createBufferSource(); src.buffer = buf;
+    const f = ctx.createBiquadFilter();
+    f.type = "bandpass"; f.Q.value = 1.2;
+    f.frequency.setValueAtTime(500, now);
+    f.frequency.exponentialRampToValueAtTime(1800, now + dur);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, now);
+    g.gain.exponentialRampToValueAtTime(0.09, now + dur * 0.3);
+    g.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+    src.connect(f); f.connect(g); g.connect(ctx.destination);
+    src.start(now); src.stop(now + dur + 0.01);
+  } catch (e) { /* 無視 */ }
+}
+function playMoveSound() {   // 着地の「コッ」
+  try {
+    const ctx = getAudio(); if (!ctx) return;
+    const now = ctx.currentTime;
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
     o.type = "triangle";
     o.frequency.setValueAtTime(320, now);
     o.frequency.exponentialRampToValueAtTime(180, now + 0.09); // 少し下がる＝木の駒っぽい
     g.gain.setValueAtTime(0.0001, now);
     g.gain.exponentialRampToValueAtTime(0.18, now + 0.008);
     g.gain.exponentialRampToValueAtTime(0.0001, now + 0.12);
-    o.connect(g); g.connect(audioCtx.destination);
+    o.connect(g); g.connect(ctx.destination);
     o.start(now);
     o.stop(now + 0.13);
   } catch (e) { /* 音が出せない環境でも黙ってスルー */ }
@@ -208,6 +255,7 @@ function backToTop(tellServer) {
   selectedCell = null;
   reviewIndex = null;
   lastMoveSig = "init";
+  shownBoard = null;
   $("join-code").value = "";
   $("btn-create").disabled = false;   // トップに戻ったら作成・入室を押せるように戻す
   $("btn-join").disabled = false;
@@ -255,13 +303,13 @@ function render() {
   if (phase === "play" || phase === "over") {
     showScreen("screen-play");
     show("board-wrap"); show("log-wrap"); show("rules-ref");
-    // 駒が動いたら効果音（自分の手・相手の手どちらも）。感想戦の巻き戻しでは鳴らさない。
-    if (phase === "play") {
-      const lm = state.last_move;
-      const sig = lm ? JSON.stringify(lm) : "none";
-      if (lastMoveSig !== "init" && sig !== "none" && sig !== lastMoveSig) playMoveSound();
-      lastMoveSig = sig;
-    }
+    // 直前の1手が変わっていたら（自分の手・相手の手どちらも）、描いたあとに駒をすべらせる。
+    // 感想戦の巻き戻しでは動かさない（lastMoveSig は生の盤の最新手だけを追う）。
+    const lm = state.last_move;
+    const sig = lm ? JSON.stringify(lm) : "none";
+    const moved = (lastMoveSig !== "init" && sig !== "none" && sig !== lastMoveSig);
+    const boardBefore = shownBoard;   // 動く前に画面に出ていた盤（動いた駒の正体を知るため）
+    lastMoveSig = sig;
     renderTurnBanner();
     if (phase === "over") {
       // 感想戦モード：投了ボタンは隠し、振り返りパネルを出す
@@ -280,8 +328,58 @@ function render() {
     renderBoard();
     renderLog();
     $("btn-rematch").classList.toggle("hidden", phase !== "over");
+    if (moved && boardBefore) {
+      const piece = boardBefore[lm.from[0]] && boardBefore[lm.from[0]][lm.from[1]];
+      animateMove(lm, piece, piece && piece.owner === session.seat);
+    }
     return;
   }
+}
+
+// ---- 駒がすべって動くアニメーション ----
+// 本物の駒は着地まで隠し、同じ見た目の「幽霊の駒」を元の位置から移動先まですべらせる。
+// 自分の手：持ち上げの音は駒を選んだ時点で鳴っているので、ここでは「すべる」と「着地」だけ。
+// 相手の手：持ち上げ→すべる→着地の3つを順に鳴らす（相手が動かしたと気づきやすいように）。
+const SLIDE_MS = 260;
+function cellEl(r, c) {
+  return $("board").querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);
+}
+function animateMove(lm, piece, isMine) {
+  const fromEl = cellEl(lm.from[0], lm.from[1]);
+  const toEl = cellEl(lm.to[0], lm.to[1]);
+  if (!fromEl || !toEl || !piece) { playMoveSound(); return; }
+  const wrap = $("board-wrap");
+  const wr = wrap.getBoundingClientRect();
+  const fr = fromEl.getBoundingClientRect(), tr = toEl.getBoundingClientRect();
+  const size = Math.min(fr.height, tr.height) * 0.92;   // 総司令部（横長）でも駒は正方形のまま
+
+  const enemy = piece.owner !== session.seat;
+  const ghost = document.createElement("div");
+  ghost.className = "pc ghost " + (piece.hidden ? "hidden-pc" : (piece.owner === "A" ? "a" : "b")) + (enemy ? " enemy" : "");
+  if (!piece.hidden) ghost.textContent = piece.kind;
+  ghost.style.width = ghost.style.height = size + "px";
+  ghost.style.fontSize = getComputedStyle(toEl).fontSize;   // マスと同じ文字の大きさ
+  const fx = fr.left - wr.left + (fr.width - size) / 2, fy = fr.top - wr.top + (fr.height - size) / 2;
+  const tx = tr.left - wr.left + (tr.width - size) / 2, ty = tr.top - wr.top + (tr.height - size) / 2;
+  ghost.style.left = fx + "px"; ghost.style.top = fy + "px";
+  ghost.style.transform = "translate(0,0)";
+
+  const realPc = toEl.querySelector(".pc");
+  if (realPc) realPc.style.visibility = "hidden";
+  wrap.appendChild(ghost);
+
+  const start = () => {
+    playSlideSound(SLIDE_MS / 1000);
+    ghost.getBoundingClientRect();   // いったん描かせてから動かす（これがないと一瞬で移動する）
+    ghost.style.transform = `translate(${tx - fx}px, ${ty - fy}px)`;
+    setTimeout(() => {
+      ghost.remove();
+      if (realPc) realPc.style.visibility = "";
+      playMoveSound();
+    }, SLIDE_MS + 30);
+  };
+  if (isMine) start();
+  else { playPickSound(); setTimeout(start, 140); }
 }
 
 function show(id) { $(id).classList.remove("hidden"); }
@@ -640,6 +738,7 @@ function handlePlayClick(rr, rc) {
   if (cell && cell.owner === session.seat) {
     if (IMMOVABLE.has(cell.kind)) { toast(`${cell.kind}は動かせません。`); return; }
     selectedCell = { r: rr, c: rc };
+    playPickSound();
     renderBoard();
     return;
   }
@@ -724,6 +823,7 @@ function renderBoard() {
 
       const div = document.createElement("div");
       div.className = "cell";
+      div.dataset.r = String(rr); div.dataset.c = String(rc);   // 実座標（アニメーションでマスを探す用）
       div.style.gridRow = String(dr + 1);
       div.style.gridColumn = String(dc + 1);
 
@@ -805,6 +905,8 @@ function renderBoard() {
       board.appendChild(div);
     }
   }
+  // 感想戦で過去の局面を見ているときは、生の盤は変わっていないので覚え直さない
+  if (state.phase !== "setup" && liveBoard === state.board) shownBoard = state.board;
 }
 
 // ---- ログ ----
@@ -885,7 +987,7 @@ $("btn-rematch").addEventListener("click", async () => {
     state = await api("/api/rematch", { code: session.code, token: session.token });
     lastVersion = state.version;
     placement = []; selectedKind = null; selectedPlace = null; selectedCell = null;
-    reviewIndex = null; lastMoveSig = "init";
+    reviewIndex = null; lastMoveSig = "init"; shownBoard = null;
     render();
   } catch (e) { toast(e.message); }
 });
