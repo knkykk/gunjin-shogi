@@ -58,31 +58,37 @@ def new_token():
     return "".join(random.choices(string.ascii_letters + string.digits, k=16))
 
 
-def empty_board():
-    return [[None for _ in range(rules.COLS)] for _ in range(rules.ROWS)]
+def rv(room):
+    """この部屋の盤の形（標準／大型）。"""
+    return rules.get_variant(room.get("variant"))
+
+
+def empty_board(R):
+    return [[None for _ in range(R.COLS)] for _ in range(R.ROWS)]
 
 
 def snapshot_board(board):
     """盤面を“正体つき”で丸ごと複製する（感想戦の記録用）。
     ※この正体つきデータは対戦が終わるまで相手には渡さない（view_forで制御）。"""
     snap = []
-    for r in range(rules.ROWS):
+    for row_cells in board:
         row = []
-        for c in range(rules.COLS):
-            cell = board[r][c]
+        for cell in row_cells:
             row.append({"owner": cell["owner"], "kind": cell["kind"]} if cell else None)
         snap.append(row)
     return snap
 
 
-def create_room():
+def create_room(variant=rules.DEFAULT_VARIANT):
     code = new_code()
     token = new_token()
+    R = rules.get_variant(variant)
     rooms[code] = {
         "code": code,
+        "variant": R.key,            # 盤の形（standard=標準23枚 / large=大型31枚）
         "players": {"A": token, "B": None},
         "phase": "waiting",          # waiting → setup → play → over
-        "board": empty_board(),
+        "board": empty_board(R),
         "ready": {"A": False, "B": False},
         "turn": "A",
         "winner": None,
@@ -101,9 +107,9 @@ def create_room():
     return code, token
 
 
-def home_cells(seat):
+def home_cells(room, seat):
     """そのプレイヤーが駒を置ける自陣のマス一覧（総司令部を含む）。"""
-    return rules.home_cells(seat)
+    return rv(room).home_cells(seat)
 
 
 def bump(room):
@@ -122,10 +128,11 @@ def add_log(room, text):
 
 def view_for(room, seat):
     """seat のプレイヤーに送る、フィルタ済みの状態を作る。"""
+    R = rv(room)
     board_view = []
-    for r in range(rules.ROWS):
+    for r in range(R.ROWS):
         row_view = []
-        for c in range(rules.COLS):
+        for c in range(R.COLS):
             cell = room["board"][r][c]
             if cell is None:
                 row_view.append(None)
@@ -153,18 +160,12 @@ def view_for(room, seat):
         "version": room["version"],
         "opponent_joined": room["players"][opponent] is not None,
         "board": board_view,
-        "rows": rules.ROWS,
-        "cols": rules.COLS,
-        "home_cells": [list(c) for c in home_cells(seat)],
-        # 地雷・軍旗を置けないマス（突入口の手前）。画面での配置ガード用。
-        "no_immovable_cells": [list(c) for c in rules.gate_entry_cells(seat)],
-        "piece_set": rules.PIECE_SET,
-        # 盤の形（画面が川・橋・総司令部を描くために渡す）
-        "border_row": rules.BORDER_ROW,
-        "gate_cols": sorted(rules.GATE_COLS),
-        "hq": {k: list(val) for k, val in rules.HQ.items()},
-        "hq_phantom": {k: list(val) for k, val in rules.HQ_PHANTOM.items()},
+        "home_cells": [list(c) for c in home_cells(room, seat)],
+        # 地雷・軍旗を置けないマス（突入口）。画面での配置ガード用。
+        "no_immovable_cells": [list(c) for c in R.gate_entry_cells(seat)],
     }
+    # 盤の形（画面が川・橋・白い丸・総司令部を描くために渡す。rows/cols/piece_set もここに入る）
+    v.update(R.geometry())
     # 感想戦の記録（正体つき）は、対戦が終わってからだけ両者に渡す。
     # 対戦中に渡すと相手の駒がバレるので、over のときに限定する。
     if room["phase"] == "over":
@@ -200,8 +201,9 @@ def handle_join(code):
         if idle < SEAT_TIMEOUT:
             return None, "その部屋はすでに満員です。"
         # 抜けたとみなして席Bを空ける。前の人の置きかけの駒は消しておく。
-        for r in range(rules.ROWS):
-            for c in range(rules.COLS):
+        R = rv(room)
+        for r in range(R.ROWS):
+            for c in range(R.COLS):
                 cell = room["board"][r][c]
                 if cell is not None and cell["owner"] == "B":
                     room["board"][r][c] = None
@@ -223,7 +225,8 @@ def handle_setup(room, seat, placement):
     if room["ready"][seat]:
         return "すでに配置は完了しています。"
 
-    allowed = set(home_cells(seat))
+    R = rv(room)
+    allowed = set(home_cells(room, seat))
     seen = set()
     kinds_count = {}
     # 入力の検証
@@ -235,15 +238,15 @@ def handle_setup(room, seat, placement):
             return "自陣の中（総司令部を含む）に置いてください。"
         if (r, c) in seen:
             return "同じマスに2つ置くことはできません。"
-        if kind not in rules.PIECE_SET:
+        if kind not in R.PIECE_SET:
             return "知らない駒があります。"
-        if not rules.can_place(seat, kind, r, c):
-            return "地雷・軍旗は、突入口（橋）の前のマスには置けません。"
+        if not R.can_place(seat, kind, r, c):
+            return "地雷・軍旗は、突入口のマス（赤い枠）には置けません。"
         seen.add((r, c))
         kinds_count[kind] = kinds_count.get(kind, 0) + 1
 
     # 駒の枚数がぴったり一致するか
-    if kinds_count != dict(rules.PIECE_SET):
+    if kinds_count != dict(R.PIECE_SET):
         return "すべての駒をちょうど1組ずつ置いてください。"
 
     # 盤に配置
@@ -266,20 +269,21 @@ def handle_setup(room, seat, placement):
 
 def has_movable_piece(room, seat):
     """seat に、まだ動かせて、実際に動かせる先が1つでもある駒があるか。"""
+    R = rv(room)
     board = room["board"]
-    for r in range(rules.ROWS):
-        for c in range(rules.COLS):
+    for r in range(R.ROWS):
+        for c in range(R.COLS):
             cell = board[r][c]
             if cell and cell["owner"] == seat and rules.is_movable(cell["kind"]):
-                if rules.legal_destinations(board, seat, r, c):
+                if R.legal_destinations(board, seat, r, c):
                     return True
     return False
 
 
-def flag_behind_kind(board, flag_owner, fr, fc):
+def flag_behind_kind(R, board, flag_owner, fr, fc):
     """軍旗のすぐ後ろ（持ち主の総司令部側）にある味方駒の種類。無ければ None。"""
-    back = -rules.forward_dir(flag_owner)  # 前(相手側)の逆＝後ろ
-    pos = rules.normalize(fr + back, fc)
+    back = -R.forward_dir(flag_owner)  # 前(相手側)の逆＝後ろ
+    pos = R.normalize(fr + back, fc)
     if pos:
         t = board[pos[0]][pos[1]]
         if t and t["owner"] == flag_owner:
@@ -298,7 +302,8 @@ def handle_move(room, seat, frm, to):
     for v in (fr, fc, tr, tc):
         if not isinstance(v, int):
             return "移動先の指定が正しくありません。"
-    if not (rules.in_board(fr, fc) and rules.in_board(tr, tc)):
+    R = rv(room)
+    if not (R.in_board(fr, fc) and R.in_board(tr, tc)):
         return "盤の外は選べません。"
 
     board = room["board"]
@@ -309,7 +314,7 @@ def handle_move(room, seat, frm, to):
         return f"{mover['kind']}は動かせません。"
 
     # 駒の種類ごとの動きとして正しい移動先か
-    if (tr, tc) not in rules.legal_destinations(board, seat, fr, fc):
+    if (tr, tc) not in R.legal_destinations(board, seat, fr, fc):
         return "その駒はそこへは動かせません。"
 
     opponent = "B" if seat == "A" else "A"
@@ -326,7 +331,7 @@ def handle_move(room, seat, frm, to):
         # 敵の駒とぶつかる → 審判が判定
         behind = None
         if target["kind"] == rules.FLAG:
-            behind = flag_behind_kind(board, opponent, tr, tc)
+            behind = flag_behind_kind(R, board, opponent, tr, tc)
         result = rules.resolve_battle(mover["kind"], target["kind"], behind)
         mk = mover["kind"]     # 自分（攻撃側 seat）の駒の種類
         tk = target["kind"]    # 相手（守備側 opponent）の駒の種類
@@ -363,7 +368,7 @@ def handle_move(room, seat, frm, to):
 
     # 勝敗チェック(1)：相手の総司令部を占領した
     lander = board[tr][tc]
-    if lander and lander["owner"] == seat and (tr, tc) == rules.HQ[opponent] \
+    if lander and lander["owner"] == seat and (tr, tc) == R.HQ[opponent] \
             and lander["kind"] in rules.CAN_CAPTURE_HQ:
         add_log(room, f"{seat}軍が{opponent}軍の総司令部を占領！ {seat}軍の勝ちです。")
         room["phase"] = "over"
@@ -413,7 +418,7 @@ def handle_resign(room, seat):
 
 def handle_rematch(room):
     """もう一局。盤面を空にして配置フェーズからやり直す。"""
-    room["board"] = empty_board()
+    room["board"] = empty_board(rv(room))
     room["ready"] = {"A": False, "B": False}
     room["phase"] = "setup"
     room["turn"] = "A"
@@ -488,8 +493,12 @@ class Handler(BaseHTTPRequestHandler):
 
         with lock:
             if path == "/api/create":
-                code, token = create_room()
-                dlog(f"CREATE 成功: 部屋 {code} を作成（席A）")
+                variant = data.get("variant") or rules.DEFAULT_VARIANT
+                if variant not in rules.VARIANTS:
+                    self.reply(400, {"error": "盤の種類が正しくありません。"})
+                    return
+                code, token = create_room(variant)
+                dlog(f"CREATE 成功: 部屋 {code} を作成（席A・{variant}）")
                 self.reply(200, {"code": code, "token": token, "seat": "A"})
                 return
 
