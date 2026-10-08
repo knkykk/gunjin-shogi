@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>軍人将棋 オンライン対戦</title>
-  <link rel="stylesheet" href="style.css?v=18">
+  <link rel="stylesheet" href="style.css?v=19">
 </head>
 <body>
 <div class="layout">
@@ -12,7 +12,7 @@
   <header>
     <h1>軍人将棋</h1>
     <p class="tagline">審判あり・オンライン対戦</p>
-    <p style="text-align:center;font-size:0.8em;opacity:0.6;margin:2px 0 0;">バージョン v18（2026-10-07）</p>
+    <p style="text-align:center;font-size:0.8em;opacity:0.6;margin:2px 0 0;">バージョン v19（2026-10-08）</p>
   </header>
 
   <div id="stage" class="stage">
@@ -20,8 +20,12 @@
   <!-- 画面1: トップ（部屋を作る / 入る） -->
   <section id="screen-top" class="screen">
     <div class="card">
+      <div class="variant-pick">
+        <label><input type="radio" name="variant" value="standard" checked> <b>標準</b><span>23枚・6列。川を橋で渡る</span></label>
+        <label><input type="radio" name="variant" value="large"> <b>大型</b><span>31枚・8列。白い丸で一回止まる</span></label>
+      </div>
       <button id="btn-create" class="big-btn">部屋を作る</button>
-      <p class="hint">部屋を作ると、あいことば（部屋コード）が出ます。<br>それを相手に伝えてください。</p>
+      <p class="hint">部屋を作ると、あいことば（部屋コード）が出ます。<br>それを相手に伝えてください。盤の種類は部屋を作る人が選びます。</p>
     </div>
     <div class="card">
       <label for="join-code">部屋に入る</label>
@@ -36,6 +40,7 @@
       <h2>あなたはホストです。相手の入室を待っています…</h2>
       <p>下の「あいことば」を相手に伝えてください。<br><b>あなたはこのまま何も押さずに待ってください（自分では入室しません）。</b></p>
       <div id="room-code" class="room-code"></div>
+      <p id="wait-variant" class="hint" style="margin-top:4px;"></p>
       <p class="hint">相手が「入室する」でこのあいことばを入れると、自動で対戦が始まります。</p>
       <button id="btn-leave-wait" class="sub-btn back-btn">× この部屋をやめる（最初に戻る）</button>
     </div>
@@ -45,8 +50,8 @@
   <section id="screen-setup" class="screen hidden">
     <div class="card">
       <button id="btn-leave-setup" class="sub-btn back-btn">← 最初に戻る（部屋を出る）</button>
-      <h2>駒を配置しましょう（全23枚）</h2>
-      <p class="hint">下の駒置き場から駒を選び、自陣（色つきのマス）をタップして置きます。置いた駒はタップで持ち上げ→<b>空きマスをタップで移動／別の駒をタップで入れ替え／同じ駒をもう一度タップで置き場に戻す</b>。★が自分の総司令部で、相手に大将〜少佐で占領されると負けなのでしっかり守りましょう。<b>赤い枠のマス（突入口の前）には地雷・軍旗は置けません。</b>急ぐときは「おまかせ配置」でも置けます。</p>
+      <h2 id="setup-title">駒を配置しましょう</h2>
+      <p class="hint">下の駒置き場から駒を選び、自陣（色つきのマス）をタップして置きます。置いた駒はタップで持ち上げ→<b>空きマスをタップで移動／別の駒をタップで入れ替え／同じ駒をもう一度タップで置き場に戻す</b>。★が自分の総司令部で、相手に大将〜少佐で占領されると負けなのでしっかり守りましょう。<b>赤い枠のマス（突入口）には地雷・軍旗は置けません。</b>急ぐときは「おまかせ配置」でも置けます。</p>
       <div id="tray" class="tray"></div>
       <div class="setup-actions">
         <button id="btn-auto" class="sub-btn">おまかせ配置</button>
@@ -97,7 +102,11 @@
         <li><b>軍旗</b>：すぐ後ろの味方の駒と同じ強さで戦う。動かない</li>
       </ul>
       <p class="credit">BGM：配置中はモーツァルト「レクイエム 怒りの日」、対戦中はブラームス「交響曲第1番 第1楽章」。音源は CMSL クラシック名曲サウンドライブラリー（ANDO TOWA）、CC BY 2.1 JP。</p>
-      <p><b>動き</b>：ふつうの駒＝1マス／工兵＝縦横どこまでも／タンク・騎兵＝周囲1マスか前2マス／ヒコーキ＝縦どこまでも・横1マス（川も飛び越える）。中央の川（中央の帯）は渡れません。渡れるのは「橋」2か所だけで、橋の上には止まれず、手前から向こう側へ一気に進みます。総司令部（★）は横長ですが“1マス”です。</p>
+      <p id="rules-pieces-standard"><b>駒（各23枚）</b>：大将・中将・少将・大佐・中佐・少佐・騎兵・スパイ・軍旗が1枚ずつ、大尉・中尉・少尉・地雷・工兵・タンク・ヒコーキが2枚ずつ。</p>
+      <p id="rules-pieces-large" class="hidden"><b>駒（各31枚）</b>：大将・中将・スパイ・軍旗が1枚ずつ、少将・大佐・中佐・少佐・大尉・中尉・少尉・騎兵・ヒコーキが2枚ずつ、地雷・工兵・タンクが3枚ずつ。</p>
+      <p><b>動き</b>：ふつうの駒＝1マス／工兵＝縦横どこまでも／タンク・騎兵＝周囲1マスか前2マス／ヒコーキ＝縦どこまでも・横1マス（川も飛び越える）。総司令部（★）は横長ですが“1マス”です。</p>
+      <p id="rules-board-standard"><b>盤（標準）</b>：中央の川は渡れません。渡れるのは「橋」2か所だけで、橋の上には止まれず、手前から向こう側へ一気に進みます。</p>
+      <p id="rules-board-large" class="hidden"><b>盤（大型）</b>：中央の川に「白い丸」が2つあり、突入口のマス（赤い枠）→白い丸→向こう側の突入口のマス、と<b>どの駒も丸で一回止まって</b>渡ります。丸からは左右どちらの突入口へ出てもよく、丸にいる駒は攻撃できます。丸への出入りはどの駒も1歩だけで、工兵の滑りやタンク・騎兵の2マスで丸をまたいだり飛び込んだりはできません。ヒコーキだけは丸に関係なく川を飛び越えます。</p>
     </div>
   </details>
 
@@ -121,6 +130,6 @@
   <!-- お知らせ（エラーなど） -->
   <div id="toast" class="toast hidden"></div>
 
-  <script src="client.js?v=18"></script>
+  <script src="client.js?v=19"></script>
 </body>
 </html>

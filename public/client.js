@@ -231,7 +231,9 @@ $("btn-create").addEventListener("click", async () => {
   const btn = $("btn-create");
   btn.disabled = true;
   try {
-    const r = await api("/api/create", {});
+    const picked = document.querySelector('input[name="variant"]:checked');
+    const variant = picked ? picked.value : "standard";
+    const r = await api("/api/create", { variant });
     session = { code: r.code, token: r.token, seat: r.seat };
     saveSession(session);
     lastVersion = -1;
@@ -355,10 +357,12 @@ function render() {
   if (phase === "waiting") {
     showScreen("screen-wait");
     $("room-code").textContent = state.code;
+    $("wait-variant").textContent = `盤：${state.variant_name || "標準"}（${state.total_pieces || 23}枚・${state.cols || 6}列）`;
     hide("board-wrap"); hide("log-wrap"); hide("rules-ref"); hide("play-controls");
     return;
   }
 
+  applyVariantTexts();
   if (phase === "setup") {
     showScreen("screen-setup");
     show("board-wrap"); show("log-wrap"); show("rules-ref"); show("play-controls");
@@ -455,6 +459,16 @@ function animateMove(lm, piece, isMine) {
 
 function show(id) { $(id).classList.remove("hidden"); }
 function hide(id) { $(id).classList.add("hidden"); }
+
+// 盤の種類（標準／大型）で変わる文言
+function applyVariantTexts() {
+  const large = state.variant === "large";
+  $("setup-title").textContent = `駒を配置しましょう（${state.variant_name || "標準"}・全${state.total_pieces || 23}枚）`.replace("標準・", "");
+  $("rules-board-standard").classList.toggle("hidden", large);
+  $("rules-board-large").classList.toggle("hidden", !large);
+  $("rules-pieces-standard").classList.toggle("hidden", large);
+  $("rules-pieces-large").classList.toggle("hidden", !large);
+}
 
 // ---- 手番・勝敗の表示 ----
 function renderTurnBanner() {
@@ -578,7 +592,7 @@ function handleSetupClick(rr, rc) {
   const ex = placedAt(rr, rc);
   const redraw = () => { renderTray(); renderBoard(); updateSetupStatus(); };
 
-  const NG = "地雷・軍旗は、突入口（橋）の前のマスには置けません。";
+  const NG = "地雷・軍旗は、突入口のマス（赤い枠）には置けません。";
 
   // すでに盤の駒を持ち上げている場合
   if (selectedPlace) {
@@ -617,6 +631,17 @@ const IMMOVABLE = new Set(["地雷", "軍旗"]);
 // ---- 盤の形の判定（サーバーから来た geometry を使う。rules.py と同じ考え方）----
 function inBoard(r, c) { return r >= 0 && r < state.rows && c >= 0 && c < state.cols; }
 function isGateCol(c) { return (state.gate_cols || []).includes(c); }
+// 大型版の白い丸（川の行にある、駒が止まれるマス）
+function isCircle(r, c) { return (state.circles || []).some(([a, b]) => a === r && b === c); }
+// 丸(r,c)につながる突入口のマス4つ
+function circleLinks(r, c) { return (state.circle_links || {})[r + "," + c] || []; }
+// 突入口のマス(r,c)からつながる丸。突入口でなければ null
+function gateCircle(r, c) {
+  for (const [cr, cc] of (state.circles || [])) {
+    if (circleLinks(cr, cc).some(([a, b]) => a === r && b === c)) return [cr, cc];
+  }
+  return null;
+}
 
 // 総司令部の“相方マス”（駒を置けない見た目だけのマス）の集合
 function phantomSet() {
@@ -634,10 +659,10 @@ function hqOfRow(r) {
   return null;
 }
 
-// 駒が“止まれる”マスか（川と、総司令部の相方マスは不可）
+// 駒が“止まれる”マスか（川と、総司令部の相方マスは不可。白い丸だけは止まれる）
 function isCell(r, c) {
   if (!inBoard(r, c)) return false;
-  if (r === state.border_row) return false;
+  if (r === state.border_row) return isCircle(r, c);
   if (isPhantom(r, c)) return false;
   return true;
 }
@@ -649,19 +674,25 @@ function normalize(r, c) {
   return null;
 }
 
-// 上下左右に1歩進んだ“次のマス”（川は橋の列だけ渡れる・総司令部の相方は読み替え）
+// 縦に1歩進んだ先。川に踏み込むなら、橋（標準）か白い丸（大型）の決まりに従う
+function vertFrom(r, c, dr) {
+  const nr = r + dr;
+  if (nr === state.border_row) {
+    if (isGateCol(c)) return normalize(state.border_row + dr, c);  // 標準：橋で向こう岸へ
+    return gateCircle(r, c);                                       // 大型：突入口のマスから丸へ（他は川で止まる）
+  }
+  return normalize(nr, c);
+}
+// 上下左右に1歩進んだ“次のマス”。工兵の滑りやタンクの2歩目の“続き”に使う。
+// 白い丸からの続きの1歩は無い（丸の出入りは firstSteps で扱う）。
 function step(r, c, dr, dc) {
+  if (r === state.border_row) return null;
   if (dr === 0) {
     let nr = r, nc = c + dc;
     if (isPhantom(nr, nc)) nc += dc;   // 相方マスは飛ばして本体の隣へ
     return normalize(nr, nc);
   }
-  const nr = r + dr;
-  if (nr === state.border_row) {
-    if (isGateCol(c)) return normalize(state.border_row + dr, c);  // 橋で渡る
-    return null;                                                   // 川で止まる
-  }
-  return normalize(nr, c);
+  return vertFrom(r, c, dr);
 }
 
 function forwardDir(seat) { return seat === "A" ? -1 : 1; } // 前（相手側）へ進む行の増分
@@ -677,21 +708,21 @@ function hqCols() {
   const a = state.hq.A, pa = state.hq_phantom.A;
   return [a[1], pa[1]].sort((x, y) => x - y);
 }
-// 縦1歩。総司令部の駒は中央2列（左前・右前）どちらへも出られる＝最大2マス返す
+// 縦1歩。総司令部の駒は中央2列（左前・右前）どちらへも出られる＝最大2マス返す。
+// 白い丸の駒は、その方向の突入口2マスへ出られる。
 function stepVertMulti(r, c, dr) {
+  if (isCircle(r, c)) return circleLinks(r, c).filter(([a]) => a === r + dr).map(([a, b]) => [a, b]);
   const cols = isHQBody(r, c) ? hqCols() : [c];
   const outs = [];
   for (const cc of cols) {
-    let p; const nr = r + dr;
-    if (nr === state.border_row) p = isGateCol(cc) ? normalize(state.border_row + dr, cc) : null;
-    else p = normalize(nr, cc);
+    const p = vertFrom(r, cc, dr);
     if (p && !(p[0] === r && p[1] === c) && !outs.some((q) => q[0] === p[0] && q[1] === p[1])) outs.push(p);
   }
   return outs;
 }
-// 1歩目の候補（横＝1マス、縦＝総司令部なら最大2マス）
+// 1歩目の候補（横＝1マス、縦＝総司令部なら最大2マス・丸なら突入口2マス）
 function firstSteps(r, c, dr, dc) {
-  if (dr === 0) { const p = step(r, c, 0, dc); return p ? [p] : []; }
+  if (dr === 0) { if (isCircle(r, c)) return []; const p = step(r, c, 0, dc); return p ? [p] : []; }
   return stepVertMulti(r, c, dr);
 }
 
@@ -748,16 +779,18 @@ function legalTargets(r, c) {
     for (const dc of [-1, 1]) { const pos = step(r, c, 0, dc); if (canLand(pos)) push(pos); }
 
   } else if (kind === "工兵") {
-    // 縦横に何マスでも（飛び越せない・壁や川で止まる）
+    // 縦横に何マスでも（飛び越せない・壁や川で止まる）。
+    // 白い丸への出入りは隣の突入口のマスからの1歩だけ（滑りの途中で丸には入れず、丸から滑り出せない）
     for (const [dr, dc] of DIRS) {
       for (const start of firstSteps(r, c, dr, dc)) {
         let cr = start[0], cc = start[1];
         const t0 = state.board[cr][cc];
         if (t0) { if (t0.owner !== seat) push(start); continue; }
         push(start);
+        if (isCircle(r, c)) continue;
         while (true) {
           const pos = step(cr, cc, dr, dc);
-          if (!pos) break;
+          if (!pos || isCircle(pos[0], pos[1])) break;
           const t = state.board[pos[0]][pos[1]];
           if (!t) { push(pos); }
           else { if (t.owner !== seat) push(pos); break; }
@@ -771,8 +804,12 @@ function legalTargets(r, c) {
     for (const [dr, dc] of DIRS) {
       for (const pos of firstSteps(r, c, dr, dc)) if (canLand(pos)) push(pos);
     }
-    for (const one of firstSteps(r, c, fdir, 0)) {
-      if (isEmpty(one)) { const two = step(one[0], one[1], fdir, 0); if (canLand(two)) push(two); }
+    if (!isCircle(r, c)) {
+      for (const one of firstSteps(r, c, fdir, 0)) {
+        if (!isEmpty(one)) continue;
+        const two = step(one[0], one[1], fdir, 0);
+        if (two && !isCircle(two[0], two[1]) && canLand(two)) push(two);
+      }
     }
 
   } else {
@@ -850,6 +887,7 @@ function activeLastMove() {
 // パソコン（横幅900px以上）では、右側の領域の縦と横の余白から「マス1つの大きさ」を決め、
 // 盤がはみ出さない最大の大きさにする。スマホでは従来どおり横幅いっぱい（CSSに任せる）。
 const GAP = 3, PAD = 3;   // style.css の #board の gap と padding と同じ値
+let lastCellPx = 40;      // fitBoard が決めた、マス1つの大きさ（突入口の帯を描くときに使う）
 function fitBoard() {
   const board = $("board");
   if (!state) return;
@@ -869,6 +907,7 @@ function fitBoard() {
     cell = (wrap.clientWidth - PAD * 2 - GAP * (cols - 1)) / cols;
   }
   cell = Math.max(24, Math.floor(cell));
+  lastCellPx = cell;
   // 行と列の幅を「等分（1fr）」ではなくピクセルで直接指定する。
   // 等分だとブラウザによってはマスの中身に引っぱられて幅が伸び、盤の右と下がはみ出す。
   board.style.gridTemplateColumns = `repeat(${cols}, ${cell}px)`;
@@ -879,10 +918,41 @@ function fitBoard() {
 }
 window.addEventListener("resize", () => { if (state) fitBoard(); });
 
+// 大型版：突入口のマスと白い丸をつなぐ斜めの帯を、マスの下に描く
+function drawCircleBands(board) {
+  const circles = state.circles || [];
+  if (!circles.length) return;
+  const w = board.style.width, h = board.style.height;
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("class", "bands");
+  svg.setAttribute("width", w); svg.setAttribute("height", h);
+  const center = (rr, rc) => {
+    const [dr, dc] = toDisplay(rr, rc);
+    return [PAD + dc * (lastCellPx + GAP) + lastCellPx / 2, PAD + dr * (lastCellPx + GAP) + lastCellPx / 2];
+  };
+  const wide = Math.max(8, lastCellPx * 0.46), inner = Math.max(5, lastCellPx * 0.36);
+  for (const pass of [["#8fa3b1", wide], ["#dfe8ee", inner]]) {
+    for (const [cr, cc] of circles) {
+      const [x2, y2] = center(cr, cc);
+      for (const [gr, gc] of circleLinks(cr, cc)) {
+        const [x1, y1] = center(gr, gc);
+        const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        line.setAttribute("x1", x1); line.setAttribute("y1", y1);
+        line.setAttribute("x2", x2); line.setAttribute("y2", y2);
+        line.setAttribute("stroke", pass[0]); line.setAttribute("stroke-width", pass[1]);
+        line.setAttribute("stroke-linecap", "round");
+        svg.appendChild(line);
+      }
+    }
+  }
+  board.appendChild(svg);
+}
+
 function renderBoard() {
   const board = $("board");
   fitBoard();   // 行と列の幅と盤の大きさを決める（パソコンはピクセル指定、スマホは等分）
   board.innerHTML = "";
+  drawCircleBands(board);
 
   const targets = (state.phase === "play" && selectedCell)
     ? legalTargets(selectedCell.r, selectedCell.c) : [];
@@ -904,11 +974,15 @@ function renderBoard() {
       div.style.gridRow = String(dr + 1);
       div.style.gridColumn = String(dc + 1);
 
-      // 川（国境の行）＝止まれないマス。橋の列だけ渡れる通り道。
+      // 川（国境の行）＝止まれないマス。標準は橋の列だけ渡れる通り道。大型の白い丸は止まれるマス。
       if (rr === state.border_row) {
-        div.classList.add(isGateCol(rc) ? "bridge" : "river");
-        board.appendChild(div);
-        continue;
+        if (isCircle(rr, rc)) {
+          div.classList.add("circle");
+        } else {
+          div.classList.add(isGateCol(rc) ? "bridge" : "river");
+          board.appendChild(div);
+          continue;
+        }
       }
 
       // 総司令部の本体マス → 横2マス分にまたがる“ひとつのマス”として描く
