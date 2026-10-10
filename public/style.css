@@ -381,7 +381,7 @@ input[type=text] {
 }
 .review-controls .sub-btn { flex: 1 1 auto; }
 
-/* 相手の駒の推理：何か分かっている駒の印と、マウスを乗せたときの吹き出し */
+/* 相手の駒の記録とメモ：記録がある駒の印、マウスを乗せたときの吹き出し、メモを書く欄 */
 .intel-mark {
   position: absolute; top: 3px; right: 3px;
   width: 9px; height: 9px; border-radius: 50%;
@@ -389,13 +389,25 @@ input[type=text] {
   box-shadow: 0 0 2px rgba(0,0,0,0.5);
   pointer-events: none; z-index: 2;
 }
+.pc.hidden-pc.memo-pc::after { content: none; }
+.pc.memo-pc { font-size: 0.8em; line-height: 1.1; word-break: break-all; }
 #intel-tip {
   display: none; position: absolute; z-index: 50;
   max-width: 320px; padding: 8px 12px;
   background: #2b2620; color: #fff; border-radius: 8px;
-  font-size: 14px; line-height: 1.5;
+  font-size: 14px; line-height: 1.6;
   box-shadow: 0 4px 12px rgba(0,0,0,0.3);
   pointer-events: none;
 }
-#intel-tip .intel-head { font-weight: bold; margin-bottom: 4px; }
-#intel-tip ul { margin: 0; padding-left: 1.2em; }
+#intel-tip .intel-memo { font-weight: bold; color: #ffd27a; }
+#memo-editor {
+  display: none; position: absolute; z-index: 60;
+  width: 240px; padding: 10px 12px;
+  background: #fff; border: 1px solid #c9bfb0; border-radius: 8px;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.25);
+  font-size: 14px;
+}
+#memo-editor .memo-title { font-weight: bold; margin-bottom: 6px; letter-spacing: normal; }
+#memo-editor input { width: 100%; box-sizing: border-box; font-size: 16px; padding: 6px; letter-spacing: normal; }
+#memo-editor .memo-btns { display: flex; gap: 6px; margin-top: 8px; }
+#memo-editor .memo-btns button { flex: 1; padding: 6px 0; }

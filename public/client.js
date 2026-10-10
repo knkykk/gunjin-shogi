@@ -423,6 +423,10 @@ function render() {
     const moved = (lastMoveSig !== "init" && sig !== "none" && sig !== lastMoveSig);
     const boardBefore = shownBoard;   // 動く前に画面に出ていた盤（動いた駒の正体を知るため）
     lastMoveSig = sig;
+    if (memoEdit && moved && lm.from[0] === memoEdit.r && lm.from[1] === memoEdit.c) {
+      memoEdit = { r: lm.to[0], c: lm.to[1] };
+    }
+    if (memoEdit && phase !== "play") closeMemoEditor();
     renderTurnBanner();
     if (phase === "over") {
       // 感想戦モード：投了ボタンは隠し、振り返りパネルを出す
@@ -469,11 +473,12 @@ function animateMove(lm, piece, isMine, isBattle) {
   const size = Math.min(fr.height, tr.height) * 0.92;   // 総司令部（横長）でも駒は正方形のまま
 
   const known = piece.hidden && state.intel && state.intel[lm.to[0] + "," + lm.to[1]];
-  if (known && known.candidates.length === 1) piece = { owner: piece.owner, kind: known.candidates[0] };
+  const memo = known && known.memo;
   const enemy = piece.owner !== session.seat;
   const ghost = document.createElement("div");
-  ghost.className = "pc ghost " + (piece.hidden ? "hidden-pc" : (piece.owner === "A" ? "a" : "b")) + (enemy ? " enemy" : "");
+  ghost.className = "pc ghost " + (piece.hidden ? "hidden-pc" + (memo ? " memo-pc" : "") : (piece.owner === "A" ? "a" : "b")) + (enemy ? " enemy" : "");
   if (!piece.hidden) ghost.textContent = piece.kind;
+  else if (memo) ghost.textContent = memoLabel(memo);
   ghost.style.width = ghost.style.height = size + "px";
   ghost.style.fontSize = getComputedStyle(toEl).fontSize;   // マスと同じ文字の大きさ
   const fx = fr.left - wr.left + (fr.width - size) / 2, fy = fr.top - wr.top + (fr.height - size) / 2;
@@ -870,9 +875,16 @@ function legalTargets(r, c) {
 
 function handlePlayClick(rr, rc) {
   if (state.phase !== "play") return;
-  if (state.turn !== session.seat) { toast("いまは相手の手番です。"); return; }
-
   const cell = state.board[rr][rc];
+  const myTurn = state.turn === session.seat;
+
+  // 相手の駒をクリック：自分の駒を選んでいてそこを攻められるとき以外は、メモを書く欄を開く（相手の手番中も書ける）
+  if (cell && cell.owner !== session.seat) {
+    const canAttack = myTurn && selectedCell &&
+      legalTargets(selectedCell.r, selectedCell.c).some(([tr, tc]) => tr === rr && tc === rc);
+    if (!canAttack) { openMemoEditor(rr, rc); return; }
+  }
+  if (!myTurn) { toast("いまは相手の手番です。"); return; }
 
   // すでに選んでいる駒があれば、そこへ動かせるか判定
   if (selectedCell) {
@@ -1075,17 +1087,18 @@ function renderBoard() {
         piece = liveBoard[rr][rc];
       }
 
-      // 相手の駒の推理（対戦中の生の盤だけ）。候補が1つに決まった駒は、正体が見えている駒と同じように描く
+      // 相手の駒の記録（勝った相手・動き方）と自分のメモ（対戦中の生の盤だけ）
       const intel = (piece && piece.hidden && liveBoard === state.board && state.intel)
         ? state.intel[rr + "," + rc] : null;
-      if (intel && intel.candidates.length === 1) {
-        piece = { owner: piece.owner, kind: intel.candidates[0] };
-      }
 
       if (piece) {
         const pc = document.createElement("div");
         const enemy = piece.owner !== session.seat;   // 相手の駒は下向き（自分に向く）
-        if (piece.hidden) {
+        if (piece.hidden && intel && intel.memo) {
+          // メモのある相手の駒は、「？」の代わりにメモの最初の数文字を出す
+          pc.className = "pc hidden-pc memo-pc" + (enemy ? " enemy" : "");
+          pc.textContent = memoLabel(intel.memo);
+        } else if (piece.hidden) {
           pc.className = "pc hidden-pc" + (enemy ? " enemy" : "");
         } else {
           pc.className = "pc " + (piece.owner === "A" ? "a" : "b") + (enemy ? " enemy" : "");
@@ -1094,10 +1107,12 @@ function renderBoard() {
         div.appendChild(pc);
       }
       if (intel) {
-        // 何か分かっている相手の駒には印を付け、マウスを乗せると候補と理由を出す
-        const mark = document.createElement("div");
-        mark.className = "intel-mark";
-        div.appendChild(mark);
+        // 戦闘や動きの記録がある相手の駒には印を付ける。マウスを乗せると記録とメモを出す
+        if (intel.wins.length || intel.moves.length) {
+          const mark = document.createElement("div");
+          mark.className = "intel-mark";
+          div.appendChild(mark);
+        }
         div.addEventListener("mouseenter", () => showIntelTip(div, intel));
         div.addEventListener("mouseleave", hideIntelTip);
       }
@@ -1123,7 +1138,9 @@ function renderBoard() {
   if (state.phase !== "setup" && liveBoard === state.board) shownBoard = state.board;
 }
 
-// ---- 相手の駒の推理の吹き出し ----
+// ---- 相手の駒の記録とメモの吹き出し ----
+const MEMO_LABEL_LEN = 4;   // 駒の上に出すメモの文字数
+function memoLabel(memo) { return Array.from(memo).slice(0, MEMO_LABEL_LEN).join(""); }
 function showIntelTip(cellDiv, intel) {
   let tip = $("intel-tip");
   if (!tip) {
@@ -1132,21 +1149,15 @@ function showIntelTip(cellDiv, intel) {
     document.body.appendChild(tip);
   }
   tip.innerHTML = "";
-  const head = document.createElement("div");
-  head.className = "intel-head";
-  // 外れた種類のほうが少ないときは「〇〇以外」と書く（15種類を並べると読めないため）
-  const excluded = Object.keys(state.piece_set || {}).filter(k => !intel.candidates.includes(k));
-  head.textContent = intel.candidates.length === 1 ? "確定：" + intel.candidates[0]
-    : excluded.length < intel.candidates.length ? "候補：" + excluded.join("・") + " 以外"
-    : "候補：" + intel.candidates.join("・");
-  tip.appendChild(head);
-  const ul = document.createElement("ul");
-  for (const r of intel.reasons) {
-    const li = document.createElement("li");
-    li.textContent = r;
-    ul.appendChild(li);
-  }
-  tip.appendChild(ul);
+  const line = (text, cls) => {
+    const d = document.createElement("div");
+    if (cls) d.className = cls;
+    d.textContent = text;
+    tip.appendChild(d);
+  };
+  if (intel.memo) line("メモ：" + intel.memo, "intel-memo");
+  if (intel.wins.length) line(intel.wins.join("・") + "に勝った。");
+  for (const m of intel.moves) line(m + "。");
   tip.style.display = "block";
   // マスの右に出す。画面の右端からはみ出すなら左に出す
   const cr = cellDiv.getBoundingClientRect();
@@ -1157,6 +1168,57 @@ function showIntelTip(cellDiv, intel) {
   tip.style.left = Math.max(8, x) + window.scrollX + "px";
   tip.style.top = Math.max(8, y) + window.scrollY + "px";
 }
+let memoEdit = null;   // メモを書いている相手の駒の位置 {r, c}（実座標）
+function openMemoEditor(r, c) {
+  hideIntelTip();
+  let box = $("memo-editor");
+  if (!box) {
+    box = document.createElement("div");
+    box.id = "memo-editor";
+    box.innerHTML = '<div class="memo-title">メモ（相手には見えません）</div>' +
+      '<input id="memo-input" type="text" maxlength="40" placeholder="例：大将っぽい">' +
+      '<div class="memo-btns"><button id="memo-save">保存</button>' +
+      '<button id="memo-delete">消す</button><button id="memo-cancel">やめる</button></div>';
+    document.body.appendChild(box);
+    $("memo-save").addEventListener("click", () => saveMemo($("memo-input").value));
+    $("memo-delete").addEventListener("click", () => saveMemo(""));
+    $("memo-cancel").addEventListener("click", closeMemoEditor);
+    $("memo-input").addEventListener("keydown", (e) => {
+      if (e.isComposing || e.keyCode === 229) return;   // 日本語の変換を決めるEnterでは保存しない
+      if (e.key === "Enter") saveMemo($("memo-input").value);
+      if (e.key === "Escape") closeMemoEditor();
+    });
+  }
+  memoEdit = { r, c };
+  const info = state.intel && state.intel[r + "," + c];
+  $("memo-input").value = (info && info.memo) || "";
+  $("memo-delete").classList.toggle("hidden", !(info && info.memo));
+  box.style.display = "block";
+  const cr = cellEl(r, c).getBoundingClientRect();
+  const bw = box.offsetWidth, bh = box.offsetHeight;
+  let x = cr.right + 8;
+  if (x + bw > window.innerWidth - 8) x = cr.left - bw - 8;
+  const y = Math.min(cr.top, window.innerHeight - bh - 8);
+  box.style.left = Math.max(8, x) + window.scrollX + "px";
+  box.style.top = Math.max(8, y) + window.scrollY + "px";
+  $("memo-input").focus();
+}
+function closeMemoEditor() {
+  memoEdit = null;
+  const box = $("memo-editor");
+  if (box) box.style.display = "none";
+}
+async function saveMemo(text) {
+  if (!memoEdit) return;
+  try {
+    state = await api("/api/memo", {
+      code: session.code, token: session.token, pos: memoEdit, text,
+    });
+    closeMemoEditor();
+    renderBoard();
+  } catch (e) { toast(e.message); }
+}
+
 function hideIntelTip() {
   const tip = $("intel-tip");
   if (tip) tip.style.display = "none";
