@@ -169,7 +169,7 @@ def view_for(room, seat):
     v.update(R.geometry())
     # 感想戦の記録（正体つき）は、対戦が終わってからだけ両者に渡す。
     # 対戦中に渡すと相手の駒がバレるので、over のときに限定する。
-    # 相手の駒の推理（対戦中だけ）。見て分かることだけから計算した候補と理由を、盤の位置ごとに渡す
+    # 相手の駒の記録（勝った相手・動き方）と自分のメモ（対戦中だけ）。盤の位置ごとに渡す
     if room["phase"] == "play":
         v["intel"] = intel.view(room, R, seat)
     if room["phase"] == "over":
@@ -264,7 +264,7 @@ def handle_setup(room, seat, placement):
         room["phase"] = "play"
         # 先攻はA/Bランダムで決める（部屋を作った人が必ず先攻…にならないように）
         room["turn"] = random.choice(["A", "B"])
-        intel.start(room, R)   # 相手の駒の推理：駒に番号を振り、配置から分かることを書く
+        intel.start(room, R)   # 相手の駒の記録とメモ：駒に番号を振る
         # 感想戦の記録を開始（0手目＝配置直後の局面）
         room["history"] = [{"board": snapshot_board(room["board"]), "move": None, "battle": None}]
         add_log(room, f"対戦開始！ 先攻は{room['turn']}軍です。")
@@ -325,7 +325,7 @@ def handle_move(room, seat, frm, to):
     opponent = "B" if seat == "A" else "A"
     target = board[tr][tc]
 
-    intel.record_move(room, R, seat, fr, fc, tr, tc)   # 相手側の推理に「この動き」を書く
+    intel.record_move(room, R, seat, fr, fc, tr, tc)   # 相手側の記録に「この動き方」を書く
     move_battle = None   # この1手で起きた戦闘の結果（感想戦の記録用。空き移動なら None）
     # 駒の種類は伏せるルールなので、ログ・戦闘結果に駒名は一切出さない（勝った軍だけ書く）
     if target is None:
@@ -339,7 +339,7 @@ def handle_move(room, seat, frm, to):
         if target["kind"] == rules.FLAG:
             behind = flag_behind_kind(R, board, opponent, tr, tc)
         result = rules.resolve_battle(mover["kind"], target["kind"], behind)
-        intel.record_battle(room, R, seat, fr, fc, tr, tc, result)   # 両方の推理に戦闘の結果を書く
+        intel.record_battle(room, R, seat, fr, fc, tr, tc, result)   # 勝って残る駒に「どの駒に勝ったか」を書く
         mk = mover["kind"]     # 自分（攻撃側 seat）の駒の種類
         tk = target["kind"]    # 相手（守備側 opponent）の駒の種類
         bv = room.setdefault("battle_view", {"A": None, "B": None})
@@ -436,7 +436,7 @@ def handle_rematch(room):
     room["battle_view"] = {"A": None, "B": None}
     room["history"] = []
     room.pop("intel", None)
-    room.pop("piece_ids", None)
+    room.pop("memos", None)
     room["log"] = []
     add_log(room, "もう一局！ 駒を配置してください。")
     bump(room)
@@ -552,6 +552,15 @@ class Handler(BaseHTTPRequestHandler):
 
             if path == "/api/move":
                 err = handle_move(room, seat, data.get("from") or {}, data.get("to") or {})
+                if err:
+                    self.reply(400, {"error": err})
+                else:
+                    self.reply(200, view_for(room, seat))
+                return
+
+            if path == "/api/memo":
+                pos = data.get("pos") or {}
+                err = intel.set_memo(room, rv(room), seat, pos.get("r"), pos.get("c"), data.get("text"))
                 if err:
                     self.reply(400, {"error": err})
                 else:
