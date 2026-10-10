@@ -169,7 +169,7 @@ def view_for(room, seat):
     v.update(R.geometry())
     # 感想戦の記録（正体つき）は、対戦が終わってからだけ両者に渡す。
     # 対戦中に渡すと相手の駒がバレるので、over のときに限定する。
-    # 相手の駒の記録（勝った相手・動き方）と自分のメモ（対戦中だけ）。盤の位置ごとに渡す
+    # 相手の駒の記録（勝った相手）と自分のメモ（対戦中だけ）。盤の位置ごとに渡す
     if room["phase"] == "play":
         v["intel"] = intel.view(room, R, seat)
     if room["phase"] == "over":
@@ -325,7 +325,6 @@ def handle_move(room, seat, frm, to):
     opponent = "B" if seat == "A" else "A"
     target = board[tr][tc]
 
-    intel.record_move(room, R, seat, fr, fc, tr, tc)   # 相手側の記録に「この動き方」を書く
     move_battle = None   # この1手で起きた戦闘の結果（感想戦の記録用。空き移動なら None）
     # 駒の種類は伏せるルールなので、ログ・戦闘結果に駒名は一切出さない（勝った軍だけ書く）
     if target is None:
