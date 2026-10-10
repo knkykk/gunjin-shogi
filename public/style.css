@@ -390,7 +390,7 @@ input[type=text] {
   pointer-events: none; z-index: 2;
 }
 .pc.hidden-pc.memo-pc::after { content: none; }
-.pc.memo-pc { font-size: 0.8em; line-height: 1.1; word-break: break-all; }
+.pc.memo-pc { white-space: pre; line-height: 1.05; letter-spacing: 0; }
 #intel-tip {
   display: none; position: absolute; z-index: 50;
   max-width: 320px; padding: 8px 12px;

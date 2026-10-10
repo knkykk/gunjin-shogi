@@ -480,7 +480,8 @@ function animateMove(lm, piece, isMine, isBattle) {
   if (!piece.hidden) ghost.textContent = piece.kind;
   else if (memo) ghost.textContent = memoLabel(memo);
   ghost.style.width = ghost.style.height = size + "px";
-  ghost.style.fontSize = getComputedStyle(toEl).fontSize;   // マスと同じ文字の大きさ
+  ghost.style.fontSize = memo ? (size * MEMO_FONT_RATIO) + "px"   // メモは駒の大きさに合わせる
+    : getComputedStyle(toEl).fontSize;   // マスと同じ文字の大きさ
   const fx = fr.left - wr.left + (fr.width - size) / 2, fy = fr.top - wr.top + (fr.height - size) / 2;
   const tx = tr.left - wr.left + (tr.width - size) / 2, ty = tr.top - wr.top + (tr.height - size) / 2;
   ghost.style.left = fx + "px"; ghost.style.top = fy + "px";
@@ -1087,7 +1088,7 @@ function renderBoard() {
         piece = liveBoard[rr][rc];
       }
 
-      // 相手の駒の記録（勝った相手・動き方）と自分のメモ（対戦中の生の盤だけ）
+      // 相手の駒の記録（勝った相手）と自分のメモ（対戦中の生の盤だけ）
       const intel = (piece && piece.hidden && liveBoard === state.board && state.intel)
         ? state.intel[rr + "," + rc] : null;
 
@@ -1107,8 +1108,8 @@ function renderBoard() {
         div.appendChild(pc);
       }
       if (intel) {
-        // 戦闘や動きの記録がある相手の駒には印を付ける。マウスを乗せると記録とメモを出す
-        if (intel.wins.length || intel.moves.length) {
+        // 戦闘の記録がある相手の駒には印を付ける。マウスを乗せると記録とメモを出す
+        if (intel.wins.length) {
           const mark = document.createElement("div");
           mark.className = "intel-mark";
           div.appendChild(mark);
@@ -1134,13 +1135,22 @@ function renderBoard() {
       board.appendChild(div);
     }
   }
+  board.querySelectorAll(".memo-pc").forEach(fitMemoFont);   // 盤に並べてから駒の大きさを測る
   // 感想戦で過去の局面を見ているときは、生の盤は変わっていないので覚え直さない
   if (state.phase !== "setup" && liveBoard === state.board) shownBoard = state.board;
 }
 
 // ---- 相手の駒の記録とメモの吹き出し ----
-const MEMO_LABEL_LEN = 4;   // 駒の上に出すメモの文字数
-function memoLabel(memo) { return Array.from(memo).slice(0, MEMO_LABEL_LEN).join(""); }
+const MEMO_LABEL_LEN = 4;   // 駒の上に出すメモの文字数（2文字ずつ2行）
+function memoLabel(memo) {
+  const ch = Array.from(memo).slice(0, MEMO_LABEL_LEN);
+  return ch.length > 2 ? ch.slice(0, 2).join("") + "\n" + ch.slice(2).join("") : ch.join("");
+}
+const MEMO_FONT_RATIO = 0.27;   // メモの文字の大きさ＝駒の高さ×この割合（2文字が駒の幅に収まる大きさ）
+function fitMemoFont(pc) {
+  const h = pc.getBoundingClientRect().height;
+  if (h > 0) pc.style.fontSize = (h * MEMO_FONT_RATIO) + "px";
+}
 function showIntelTip(cellDiv, intel) {
   let tip = $("intel-tip");
   if (!tip) {
@@ -1157,7 +1167,6 @@ function showIntelTip(cellDiv, intel) {
   };
   if (intel.memo) line("メモ：" + intel.memo, "intel-memo");
   if (intel.wins.length) line(intel.wins.join("・") + "に勝った。");
-  for (const m of intel.moves) line(m + "。");
   tip.style.display = "block";
   // マスの右に出す。画面の右端からはみ出すなら左に出す
   const cr = cellDiv.getBoundingClientRect();
