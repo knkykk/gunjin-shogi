@@ -380,3 +380,22 @@ input[type=text] {
   gap: 8px;
 }
 .review-controls .sub-btn { flex: 1 1 auto; }
+
+/* 相手の駒の推理：何か分かっている駒の印と、マウスを乗せたときの吹き出し */
+.intel-mark {
+  position: absolute; top: 3px; right: 3px;
+  width: 9px; height: 9px; border-radius: 50%;
+  background: #e8a317; border: 1.5px solid #fff;
+  box-shadow: 0 0 2px rgba(0,0,0,0.5);
+  pointer-events: none; z-index: 2;
+}
+#intel-tip {
+  display: none; position: absolute; z-index: 50;
+  max-width: 320px; padding: 8px 12px;
+  background: #2b2620; color: #fff; border-radius: 8px;
+  font-size: 14px; line-height: 1.5;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  pointer-events: none;
+}
+#intel-tip .intel-head { font-weight: bold; margin-bottom: 4px; }
+#intel-tip ul { margin: 0; padding-left: 1.2em; }

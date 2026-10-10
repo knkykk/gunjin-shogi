@@ -162,6 +162,44 @@ function playKnockSynth() {   // 合成音の「コッ」（音ファイルが�
     o.stop(now + 0.13);
   } catch (e) { /* 音が出せない環境でも黙ってスルー */ }
 }
+// 戦闘が起きたときの爆発音（着地の音のあとに鳴らす）。
+//   低い「ドン」（下がっていく正弦波）と、こもった「ザー」（ノイズを低域に絞りながら消す）を重ねる。
+function playExplosionSound() {
+  try {
+    const ctx = getAudio(); if (!ctx) return;
+    const now = ctx.currentTime;
+    const out = ctx.createGain(); out.gain.value = 0.9; out.connect(ctx.destination);
+    // ドン
+    const o = ctx.createOscillator(), og = ctx.createGain();
+    o.type = "sine";
+    o.frequency.setValueAtTime(120, now);
+    o.frequency.exponentialRampToValueAtTime(35, now + 0.5);
+    og.gain.setValueAtTime(0.0001, now);
+    og.gain.exponentialRampToValueAtTime(0.8, now + 0.01);
+    og.gain.exponentialRampToValueAtTime(0.0001, now + 0.6);
+    o.connect(og); og.connect(out);
+    o.start(now); o.stop(now + 0.62);
+    // ザー
+    const dur = 1.1;
+    const len = Math.floor(ctx.sampleRate * dur);
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+    const src = ctx.createBufferSource(); src.buffer = buf;
+    const f = ctx.createBiquadFilter();
+    f.type = "lowpass"; f.Q.value = 0.7;
+    f.frequency.setValueAtTime(2500, now);
+    f.frequency.exponentialRampToValueAtTime(150, now + dur);
+    const ng = ctx.createGain();
+    ng.gain.setValueAtTime(0.0001, now);
+    ng.gain.exponentialRampToValueAtTime(0.6, now + 0.015);
+    ng.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+    src.connect(f); f.connect(ng); ng.connect(out);
+    src.start(now); src.stop(now + dur + 0.01);
+  } catch (e) { /* 無視 */ }
+}
+const EXPLOSION_DELAY_MS = 150;   // 着地の「カッ」を聞かせてから爆発させる間
+
 // 直近で音を鳴らした手（同じ手で二重に鳴らさない用）。"init"＝まだ観測前で鳴らさない
 let lastMoveSig = "init";
 
@@ -171,7 +209,7 @@ let lastMoveSig = "init";
 //   いずれも CMSL クラシック名曲サウンドライブラリー（CC BY 2.1 JP）。
 // オン／オフは効果音とは別に覚える（効果音は欲しいがBGMは要らない人のため）。
 const BGM_FILES = { setup: "bgm_setup.mp3", play: "bgm_play.m4a" };
-const BGM_VOLUME = 0.35;
+const BGM_VOLUME = 0.2;   // 10/10にrenの指示で35%から下げた（うるさかった）
 function loadBgmPref() {
   try { return localStorage.getItem("gunjin_bgm") !== "off"; } catch (e) { return true; }
 }
@@ -405,7 +443,9 @@ function render() {
     $("btn-rematch").classList.toggle("hidden", phase !== "over");
     if (moved && boardBefore) {
       const piece = boardBefore[lm.from[0]] && boardBefore[lm.from[0]][lm.from[1]];
-      animateMove(lm, piece, piece && piece.owner === session.seat);
+      // 移動先に駒がいた＝敵の駒とぶつかった（味方の駒のマスには動けないので、いれば必ず戦闘）
+      const isBattle = !!(boardBefore[lm.to[0]] && boardBefore[lm.to[0]][lm.to[1]]);
+      animateMove(lm, piece, piece && piece.owner === session.seat, isBattle);
     }
     return;
   }
@@ -419,15 +459,17 @@ const SLIDE_MS = 260;
 function cellEl(r, c) {
   return $("board").querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);
 }
-function animateMove(lm, piece, isMine) {
+function animateMove(lm, piece, isMine, isBattle) {
   const fromEl = cellEl(lm.from[0], lm.from[1]);
   const toEl = cellEl(lm.to[0], lm.to[1]);
-  if (!fromEl || !toEl || !piece) { playMoveSound(); return; }
+  if (!fromEl || !toEl || !piece) { playLanding(isBattle); return; }
   const wrap = $("board-wrap");
   const wr = wrap.getBoundingClientRect();
   const fr = fromEl.getBoundingClientRect(), tr = toEl.getBoundingClientRect();
   const size = Math.min(fr.height, tr.height) * 0.92;   // 総司令部（横長）でも駒は正方形のまま
 
+  const known = piece.hidden && state.intel && state.intel[lm.to[0] + "," + lm.to[1]];
+  if (known && known.candidates.length === 1) piece = { owner: piece.owner, kind: known.candidates[0] };
   const enemy = piece.owner !== session.seat;
   const ghost = document.createElement("div");
   ghost.className = "pc ghost " + (piece.hidden ? "hidden-pc" : (piece.owner === "A" ? "a" : "b")) + (enemy ? " enemy" : "");
@@ -450,11 +492,16 @@ function animateMove(lm, piece, isMine) {
     setTimeout(() => {
       ghost.remove();
       if (realPc) realPc.style.visibility = "";
-      playMoveSound();
+      playLanding(isBattle);
     }, SLIDE_MS + 30);
   };
   if (isMine) start();
   else { playPickSound(); setTimeout(start, 140); }
+}
+
+function playLanding(isBattle) {   // 着地の音。戦闘ならそのあとに爆発音
+  playMoveSound();
+  if (isBattle) setTimeout(playExplosionSound, EXPLOSION_DELAY_MS);
 }
 
 function show(id) { $(id).classList.remove("hidden"); }
@@ -952,6 +999,7 @@ function renderBoard() {
   const board = $("board");
   fitBoard();   // 行と列の幅と盤の大きさを決める（パソコンはピクセル指定、スマホは等分）
   board.innerHTML = "";
+  hideIntelTip();
   drawCircleBands(board);
 
   const targets = (state.phase === "play" && selectedCell)
@@ -1027,6 +1075,13 @@ function renderBoard() {
         piece = liveBoard[rr][rc];
       }
 
+      // 相手の駒の推理（対戦中の生の盤だけ）。候補が1つに決まった駒は、正体が見えている駒と同じように描く
+      const intel = (piece && piece.hidden && liveBoard === state.board && state.intel)
+        ? state.intel[rr + "," + rc] : null;
+      if (intel && intel.candidates.length === 1) {
+        piece = { owner: piece.owner, kind: intel.candidates[0] };
+      }
+
       if (piece) {
         const pc = document.createElement("div");
         const enemy = piece.owner !== session.seat;   // 相手の駒は下向き（自分に向く）
@@ -1037,6 +1092,14 @@ function renderBoard() {
           pc.textContent = piece.kind;
         }
         div.appendChild(pc);
+      }
+      if (intel) {
+        // 何か分かっている相手の駒には印を付け、マウスを乗せると候補と理由を出す
+        const mark = document.createElement("div");
+        mark.className = "intel-mark";
+        div.appendChild(mark);
+        div.addEventListener("mouseenter", () => showIntelTip(div, intel));
+        div.addEventListener("mouseleave", hideIntelTip);
       }
 
       // 選択中・移動可能マスの装飾
@@ -1058,6 +1121,45 @@ function renderBoard() {
   }
   // 感想戦で過去の局面を見ているときは、生の盤は変わっていないので覚え直さない
   if (state.phase !== "setup" && liveBoard === state.board) shownBoard = state.board;
+}
+
+// ---- 相手の駒の推理の吹き出し ----
+function showIntelTip(cellDiv, intel) {
+  let tip = $("intel-tip");
+  if (!tip) {
+    tip = document.createElement("div");
+    tip.id = "intel-tip";
+    document.body.appendChild(tip);
+  }
+  tip.innerHTML = "";
+  const head = document.createElement("div");
+  head.className = "intel-head";
+  // 外れた種類のほうが少ないときは「〇〇以外」と書く（15種類を並べると読めないため）
+  const excluded = Object.keys(state.piece_set || {}).filter(k => !intel.candidates.includes(k));
+  head.textContent = intel.candidates.length === 1 ? "確定：" + intel.candidates[0]
+    : excluded.length < intel.candidates.length ? "候補：" + excluded.join("・") + " 以外"
+    : "候補：" + intel.candidates.join("・");
+  tip.appendChild(head);
+  const ul = document.createElement("ul");
+  for (const r of intel.reasons) {
+    const li = document.createElement("li");
+    li.textContent = r;
+    ul.appendChild(li);
+  }
+  tip.appendChild(ul);
+  tip.style.display = "block";
+  // マスの右に出す。画面の右端からはみ出すなら左に出す
+  const cr = cellDiv.getBoundingClientRect();
+  const tw = tip.offsetWidth, th = tip.offsetHeight;
+  let x = cr.right + 8;
+  if (x + tw > window.innerWidth - 8) x = cr.left - tw - 8;
+  let y = Math.min(cr.top, window.innerHeight - th - 8);
+  tip.style.left = Math.max(8, x) + window.scrollX + "px";
+  tip.style.top = Math.max(8, y) + window.scrollY + "px";
+}
+function hideIntelTip() {
+  const tip = $("intel-tip");
+  if (tip) tip.style.display = "none";
 }
 
 // ---- ログ ----
